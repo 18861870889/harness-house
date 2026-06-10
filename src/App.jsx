@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
+import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
   describeStep,
@@ -66,6 +67,11 @@ export default function App() {
   const [pendingPlan, setPendingPlan] = useState(null);
   const [lastPlan, setLastPlan] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [llmStatus, setLlmStatus] = useState({
+    configured: false,
+    mode: "simulated",
+    model: "simulated",
+  });
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -92,6 +98,10 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    getLlmStatus().then(setLlmStatus);
+  }, []);
+
   async function submitCommand(raw = input) {
     const command = raw.trim();
     if (!command || processing) return;
@@ -102,13 +112,36 @@ export default function App() {
     setProcessing(true);
 
     const started = performance.now();
-    const plan = parseCommand(command, devices, {
+    let plan = parseCommand(command, devices, {
       currentRoomId,
       selectedRoomId,
     });
 
     if (plan.path === "llm-sim") {
-      await delay(640 + Math.round(Math.random() * 220));
+      if (llmStatus.configured) {
+        try {
+          plan = await requestLlmPlan({
+            input: command,
+            devices,
+            currentRoomId,
+            selectedRoomId,
+            timeoutMs: 1800,
+          });
+        } catch (error) {
+          await delay(180);
+          setLogs((current) => [
+            {
+              id: crypto.randomUUID(),
+              time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+              level: "info",
+              text: `真实 LLM 不可用，已退回 LLM Sim：${error.message}`,
+            },
+            ...current,
+          ]);
+        }
+      } else {
+        await delay(640 + Math.round(Math.random() * 220));
+      }
     } else {
       await delay(70 + Math.round(Math.random() * 60));
     }
@@ -231,7 +264,7 @@ export default function App() {
       </section>
 
       <aside className="left-rail">
-        <Header currentRoomId={currentRoomId} activeCount={activeDevices.length} />
+        <Header currentRoomId={currentRoomId} activeCount={activeDevices.length} llmStatus={llmStatus} />
         <SystemMetrics devices={devices} />
         <RoomSelector selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
@@ -275,7 +308,7 @@ export default function App() {
   );
 }
 
-function Header({ currentRoomId, activeCount }) {
+function Header({ currentRoomId, activeCount, llmStatus }) {
   return (
     <header className="product-header">
       <div className="mark">
@@ -292,6 +325,11 @@ function Header({ currentRoomId, activeCount }) {
       <div className="header-facts">
         <Fact icon={Layers3} label="当前区域" value={getRoomName(currentRoomId)} />
         <Fact icon={Power} label="活跃设备" value={`${activeCount}`} />
+        <Fact
+          icon={Sparkles}
+          label="LLM"
+          value={llmStatus.configured ? `Real · ${llmStatus.model}` : "Sim fallback"}
+        />
       </div>
     </header>
   );

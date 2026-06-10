@@ -429,7 +429,7 @@ function findDevices(devices, matcher) {
   return Object.values(devices).filter(matcher);
 }
 
-function commandStep(device, capability, value, reason) {
+export function commandStep(device, capability, value, reason) {
   return {
     id: crypto.randomUUID(),
     deviceId: device.id,
@@ -442,7 +442,7 @@ function commandStep(device, capability, value, reason) {
   };
 }
 
-function createPlan({ input, path, intent, confidence, steps, summary, needsConfirmation = false }) {
+export function createPlan({ input, path, intent, confidence, steps, summary, needsConfirmation = false }) {
   const highRisk = steps.some((step) => step.risk === "high");
   const sensitive = steps.some((step) => step.risk === "sensitive");
   return {

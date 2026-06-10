@@ -47,7 +47,8 @@ The current MVP runs locally and simulates smart-home devices in memory. It incl
 
 - Natural-language command console
 - Fast Path command parser for common low-risk commands
-- Simulated LLM path for fuzzy scene commands
+- Hermes-style local LLM Gateway for fuzzy scene commands
+- Simulated LLM fallback when no API key is configured
 - Safety confirmation for high-risk actions
 - Simulated device interfaces for lights, AC, fan, curtains, TV, gas water heater, sensors, pet feeder, drying rack, robot vacuum, washer, dryer, and camera
 - Real-time 3D house visualization reflecting device and room state
@@ -64,6 +65,41 @@ npm run dev
 # Open the printed local URL, usually:
 # http://localhost:5173
 ```
+
+## Real LLM Gateway
+
+By default, Harness House runs with the local `LLM Sim` fallback. To enable real model calls, create a local `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Then fill:
+
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Run:
+
+```bash
+npm run dev
+```
+
+The browser never receives the API key. Commands go through the local Hermes-style gateway:
+
+```text
+User message
+-> /api/llm/plan
+-> OpenAI-compatible model
+-> strict JSON plan
+-> Plan Validator
+-> Safety Gate
+-> Device Executor
+```
+
+If the real model times out or fails, the UI falls back to `LLM Sim` so the local demo remains usable.
 
 ## Project Status
 
