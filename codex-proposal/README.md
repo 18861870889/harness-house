@@ -6,6 +6,7 @@
 - [Hermes-Inspired Architecture ZH](./hermes-inspired-architecture-zh.md): architecture diagram and feature tradeoff for a Hermes-like but safety-first smart home framework.
 - [2s Latency-First Architecture ZH](./latency-first-architecture-zh.md): simplified command execution architecture optimized for about 2 seconds from instruction to result.
 - [AI Product PRD ZH](./ai-product-prd-zh.md): AI-specific product requirements document covering model boundaries, schemas, safety, latency, evaluation, and MVP scope.
+- [Market Evaluation ZH](./market-evaluation-zh.md): market landscape, competitor analysis, product positioning, risks, and go-to-market recommendation.
 
 ## 1. Project Positioning
 
