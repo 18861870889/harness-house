@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bot,
@@ -253,13 +253,17 @@ export default function App() {
     setDevices((current) => toggleSensor(current, sensorId));
   }
 
+  const handleSelectRoom = useCallback((roomId) => {
+    setSelectedRoomId(roomId);
+  }, []);
+
   return (
     <main className="app">
       <section className="scene-panel" aria-label="三维房屋模拟器">
         <ThreeHouse
           devices={devices}
           selectedRoomId={selectedRoomId}
-          onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
+          onSelectRoom={handleSelectRoom}
         />
       </section>
 

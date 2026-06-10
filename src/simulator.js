@@ -376,6 +376,7 @@ export const examples = [
   "书房空调调到25度",
   "我要睡了",
   "厨房有点闷",
+  "我要晾衣服",
   "准备看电影",
   "给猫加点粮",
   "打开燃气热水器",
@@ -423,6 +424,10 @@ function roomHasPresence(roomId, devices) {
 
 function findDevice(devices, roomId, type) {
   return Object.values(devices).find((device) => device.roomId === roomId && device.type === type);
+}
+
+function findDeviceByType(devices, type) {
+  return Object.values(devices).find((device) => device.type === type);
 }
 
 function findDevices(devices, matcher) {
@@ -530,7 +535,8 @@ export function parseCommand(input, devices, context = {}) {
 }
 
 function parseDirectControl(input, text, devices, currentRoomId) {
-  const roomId = detectRoom(text, currentRoomId);
+  const explicitRoomId = detectExplicitRoom(text);
+  const roomId = explicitRoomId ?? detectRoom(text, currentRoomId);
   const wantsOff = /关闭|关掉|关/.test(text);
   const wantsOn = /打开|开启|启动|开/.test(text) && !wantsOff;
   const temperature = text.match(/(\d{2})度?/);
@@ -550,7 +556,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
   const matchedType = typeMatches.find(([, pattern]) => pattern.test(text))?.[0];
   if (!matchedType) return null;
 
-  const device = findDevice(devices, roomId, matchedType);
+  const device = findDevice(devices, roomId, matchedType) ?? findDefaultDevice(devices, matchedType, explicitRoomId);
   if (!device) {
     return createPlan({
       input,
@@ -559,6 +565,18 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       confidence: 0.92,
       steps: [],
       summary: `${getRoomName(roomId)}没有找到${deviceTypeNames[matchedType]}。`,
+    });
+  }
+
+  if (matchedType === "drying_rack") {
+    const value = /收起|升起|上升|关闭|关掉|关/.test(text) ? 0 : 100;
+    return createPlan({
+      input,
+      path: "fast",
+      intent: "dry_laundry",
+      confidence: explicitRoomId ? 0.98 : 0.91,
+      steps: [commandStep(device, "set_position", value, `将${device.name}${value > 0 ? "降到晾晒位" : "收起"}。`)],
+      summary: `${device.name}将${value > 0 ? "降到晾晒位" : "收起"}。`,
     });
   }
 
@@ -644,6 +662,22 @@ function parseDirectControl(input, text, devices, currentRoomId) {
     ],
     summary: `${device.name}将${action === "turn_on" ? "打开" : "关闭"}。`,
   });
+}
+
+function detectExplicitRoom(text) {
+  for (const [alias, roomId] of Object.entries(roomAliases)) {
+    if (text.includes(alias)) return roomId;
+  }
+  return null;
+}
+
+function findDefaultDevice(devices, type, explicitRoomId) {
+  if (explicitRoomId) return null;
+  if (type === "drying_rack") return devices.drying_rack;
+  if (type === "washer") return devices.washer;
+  if (type === "dryer") return devices.dryer;
+  if (type === "robot_vacuum") return devices.robot;
+  return findDeviceByType(devices, type);
 }
 
 function buildSleepPlan(input, devices) {

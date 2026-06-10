@@ -163,8 +163,13 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
   const controlsRef = useRef(null);
   const houseGroupRef = useRef(null);
   const animatedRef = useRef([]);
+  const onSelectRoomRef = useRef(onSelectRoom);
   const raycasterRef = useRef(new THREE.Raycaster());
   const pointerRef = useRef(new THREE.Vector2());
+
+  useEffect(() => {
+    onSelectRoomRef.current = onSelectRoom;
+  }, [onSelectRoom]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -188,6 +193,9 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.enableRotate = true;
+    controls.enablePan = true;
+    controls.enableZoom = true;
     controls.minDistance = 7;
     controls.maxDistance = 18;
     controls.maxPolarAngle = Math.PI / 2.15;
@@ -213,8 +221,10 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
-      renderer.setSize(rect.width, rect.height, false);
-      camera.aspect = rect.width / Math.max(1, rect.height);
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
     const resizeObserver = new ResizeObserver(resize);
@@ -228,7 +238,7 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
       raycasterRef.current.setFromCamera(pointerRef.current, camera);
       const intersects = raycasterRef.current.intersectObjects(scene.children, true);
       const roomHit = intersects.find((hit) => hit.object.userData?.roomId);
-      if (roomHit) onSelectRoom?.(roomHit.object.userData.roomId);
+      if (roomHit) onSelectRoomRef.current?.(roomHit.object.userData.roomId);
     };
     renderer.domElement.addEventListener("click", handleClick);
 
@@ -265,7 +275,7 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [onSelectRoom]);
+  }, []);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -292,6 +302,7 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
         <span>3D Simulated House</span>
         <strong>{selectedRoomId ? getRoomName(selectedRoomId) : "全屋"}</strong>
       </div>
+      <div className="scene-controls-hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
     </div>
   );
 }
