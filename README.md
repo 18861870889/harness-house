@@ -34,33 +34,40 @@ Harness-House 是一个开源智能家居AI控制系统，目标是：
 
 | Layer | Technology |
 |-------|-----------|
-| AI Agent | Python + LLM API (OpenAI / local) |
-| Orchestration | Rule engine + cron scheduler |
-| Device Control | Home Assistant API / MQTT / REST |
-| Communication | WebSocket / REST API / Telegram Bot |
-| Data Store | SQLite / PostgreSQL |
+| MVP UI | React + Vite |
+| 3D House | Three.js |
+| AI Runtime | Fast Path parser + simulated LLM path |
+| Device Control | Local simulated device interfaces |
+| Future Device Control | Home Assistant API / MQTT / REST |
+| Future Data Store | SQLite / PostgreSQL |
+
+## MVP
+
+The current MVP runs locally and simulates smart-home devices in memory. It includes:
+
+- Natural-language command console
+- Fast Path command parser for common low-risk commands
+- Simulated LLM path for fuzzy scene commands
+- Safety confirmation for high-risk actions
+- Simulated device interfaces for lights, AC, fan, curtains, TV, gas water heater, sensors, pet feeder, drying rack, robot vacuum, washer, dryer, and camera
+- Real-time 3D house visualization reflecting device and room state
 
 ## Quick Start
 
 ```bash
-# Clone
 git clone https://github.com/18861870889/harness-house.git
 cd harness-house
 
-# Install (coming soon)
-pip install -r requirements.txt
+npm install
+npm run dev
 
-# Configure (coming soon)
-cp config.example.yaml config.yaml
-# Edit config.yaml with your device info
-
-# Run (coming soon)
-python main.py
+# Open the printed local URL, usually:
+# http://localhost:5173
 ```
 
 ## Project Status
 
-🚧 **Early Stage** — 仓库刚建立，架构设计中。
+🚧 **MVP Stage** — local simulator and 3D house runtime are available. Real Home Assistant integration is planned next.
 
 ## License
 
