@@ -122,6 +122,7 @@ async function callPlannerModel(payload) {
       temperature: 0,
       max_tokens: 500,
       response_format: { type: "json_object" },
+      ...getProviderOptions(),
       messages: [
         {
           role: "system",
@@ -154,6 +155,13 @@ async function callPlannerModel(payload) {
   const draft = parseJsonContent(content);
   validatePlannerDraft(draft);
   return draft;
+}
+
+function getProviderOptions() {
+  if (!getBaseUrl().includes("deepseek.com")) return {};
+  return {
+    thinking: { type: "disabled" },
+  };
 }
 
 function buildSystemPrompt() {

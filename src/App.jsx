@@ -125,7 +125,7 @@ export default function App() {
             devices,
             currentRoomId,
             selectedRoomId,
-            timeoutMs: 1800,
+            timeoutMs: 3000,
           });
         } catch (error) {
           await delay(180);
@@ -528,7 +528,7 @@ function PlanPreview({ plan }) {
         <ShieldCheck size={17} />
         <h2>Plan</h2>
         <span className={`path-badge ${plan.path === "fast" ? "fast" : "llm"}`}>
-          {plan.path === "fast" ? "Fast Path" : "LLM Sim"}
+          {plan.path === "fast" ? "Fast Path" : plan.path === "llm-real" ? "LLM Real" : "LLM Sim"}
         </span>
       </div>
       <p className="plan-summary">{plan.summary}</p>
