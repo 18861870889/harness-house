@@ -105,6 +105,10 @@ If the real model times out or fails, the UI falls back to `LLM Sim` so the loca
 
 🚧 **MVP Stage** — local simulator and 3D house runtime are available. Real Home Assistant integration is planned next.
 
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the planned version cadence from the local simulator MVP to real device adapters, capability boundaries, safety gates, learning layer, and multi-agent runtime.
+
 ## License
 
 MIT License
