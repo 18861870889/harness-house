@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
+import { planCommand } from "./commandPipeline.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
@@ -28,7 +29,6 @@ import {
   getRoomName,
   inferCurrentRoom,
   initialDevices,
-  parseCommand,
   rooms,
   summarizeHome,
   tickDevices,
@@ -111,42 +111,30 @@ export default function App() {
     setMessages((current) => [...current, makeMessage("user", command)]);
     setProcessing(true);
 
-    const started = performance.now();
-    let plan = parseCommand(command, devices, {
+    const pipeline = await planCommand({
+      input: command,
+      devices,
       currentRoomId,
       selectedRoomId,
+      llmStatus,
+      requestRealPlan: requestLlmPlan,
+      wait: delay,
     });
+    let plan = pipeline.plan;
 
-    if (plan.path === "llm-sim") {
-      if (llmStatus.configured) {
-        try {
-          plan = await requestLlmPlan({
-            input: command,
-            devices,
-            currentRoomId,
-            selectedRoomId,
-            timeoutMs: 3000,
-          });
-        } catch (error) {
-          await delay(180);
-          setLogs((current) => [
-            {
-              id: crypto.randomUUID(),
-              time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-              level: "info",
-              text: `真实 LLM 不可用，已退回 LLM Sim：${error.message}`,
-            },
-            ...current,
-          ]);
-        }
-      } else {
-        await delay(640 + Math.round(Math.random() * 220));
-      }
-    } else {
-      await delay(70 + Math.round(Math.random() * 60));
+    if (pipeline.fallbackError) {
+      setLogs((current) => [
+        {
+          id: crypto.randomUUID(),
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+          level: "info",
+          text: `真实 LLM 不可用，已退回 LLM Sim：${pipeline.fallbackError.message}`,
+        },
+        ...current,
+      ]);
     }
 
-    const latency = Math.round(performance.now() - started);
+    const latency = pipeline.commandResult.latencyMs;
     setLastPlan(plan);
 
     if (plan.kind === "empty") {
