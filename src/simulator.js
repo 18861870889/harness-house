@@ -1,9 +1,9 @@
-import { validatePlanSteps } from "./deviceRuntime.js";
 import {
   describeStep as describeSimulatorStep,
   executePlan as executeSimulatorPlan,
   tick as tickSimulatorDevices,
 } from "./adapters/simulatorAdapter.js";
+import { validatePlanDraft } from "./planValidator.js";
 
 export const rooms = [
   {
@@ -464,23 +464,18 @@ export function createPlan({
   devices,
   needsConfirmation = false,
 }) {
-  const validation = devices ? validatePlanSteps(steps, devices) : { validSteps: steps, rejected: [] };
-  const highRisk = validation.validSteps.some((step) => step.risk === "high");
-  const sensitive = validation.validSteps.some((step) => step.risk === "sensitive");
-  const confirmationRequired = validation.validSteps.some((step) => step.confirmation === "always");
+  const validation = validatePlanDraft({ steps, devices, needsConfirmation, summary });
   return {
     id: crypto.randomUUID(),
     input,
     path,
     intent,
     confidence,
-    steps: validation.validSteps,
-    rejectedSteps: validation.rejected,
-    summary:
-      validation.rejected.length > 0 && validation.validSteps.length === 0
-        ? `${summary} 但计划被能力边界拦截：${validation.rejected.map((item) => item.message).join("；")}`
-        : summary,
-    needsConfirmation: needsConfirmation || highRisk || sensitive || confirmationRequired,
+    steps: validation.steps,
+    rejectedSteps: validation.rejectedSteps,
+    validation,
+    summary: validation.summary,
+    needsConfirmation: validation.confirmationRequired,
     createdAt: now(),
   };
 }
