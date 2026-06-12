@@ -508,12 +508,14 @@ npm run test:e2e
 2. `v0.2.0`：改造 LLM prompt，只暴露已启用 capabilities。
 3. `v0.2.0`：补 Vitest 测试，覆盖 manifest、validator、安全确认。
 4. `v0.2.1`：抽出 `SimulatorAdapter`，让内存模拟执行逻辑从命令解析里解耦。
+5. `v0.2.2`：抽出 `PlanValidator`，输出结构化 validation report。
+6. `v0.2.3`：新增 command pipeline telemetry，记录 router、planner、safety 等阶段耗时。
+7. `v0.3.0`：新增 Home Assistant Adapter Alpha，支持 discovery 和 read state。
 
 下一步建议：
 
-1. `v0.2.2`：把 `PlanValidator` 从 `createPlan` 中拆成独立模块，输出结构化 validation report。
-2. `v0.2.3`：新增 command pipeline result，记录 router、planner、validator、safety、executor 的 latency。
-3. `v0.3.0`：开始 Home Assistant Adapter，只做 discovery 和 read state。
-4. `v0.3.1`：接入低风险真实控制：灯、风扇、窗帘、电视。
+1. `v0.3.1`：接入低风险真实控制：灯、风扇、窗帘、电视。
+2. `v0.3.2`：新增 Home Assistant mock server 和 adapter contract tests。
+3. `v0.4.0`：设备映射 UI，允许用户确认房间、类型、风险等级和可执行能力。
 
 完成 v0.2 后，再接 Home Assistant 会更稳。否则现在直接接 HA，后面会把品牌差异、设备能力、风险策略全堆进业务代码，后期维护成本会明显上升。

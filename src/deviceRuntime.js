@@ -44,6 +44,7 @@ const DEVICE_CAPABILITY_PROFILES = {
     booleanCapability(CAPABILITIES.TURN_OFF),
     numberCapability(CAPABILITIES.SET_BRIGHTNESS, 0, 100, "%"),
   ],
+  switch: [booleanCapability(CAPABILITIES.TURN_ON), booleanCapability(CAPABILITIES.TURN_OFF)],
   ac: [
     booleanCapability(CAPABILITIES.TURN_ON),
     booleanCapability(CAPABILITIES.TURN_OFF),

@@ -101,6 +101,30 @@ User message
 
 If the real model times out or fails, the UI falls back to `LLM Sim` so the local demo remains usable.
 
+## Home Assistant Adapter Alpha
+
+Harness House can discover Home Assistant entities and map them into preliminary Harness device manifests. This alpha adapter is read-only and does not execute real device control yet.
+
+Add local environment variables:
+
+```bash
+HA_BASE_URL=http://homeassistant.local:8123
+HA_TOKEN=your_long_lived_access_token
+```
+
+Then run:
+
+```bash
+npm run dev
+```
+
+Adapter endpoints:
+
+```text
+GET /api/adapters/home-assistant/status
+GET /api/adapters/home-assistant/entities
+```
+
 ## Project Status
 
 🚧 **MVP Stage** — local simulator and 3D house runtime are available. Real Home Assistant integration is planned next.

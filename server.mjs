@@ -2,10 +2,15 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
 
 const app = express();
 loadLocalEnv();
 const port = getCliPort() ?? Number(process.env.PORT ?? 5173);
+const homeAssistantAdapter = createHomeAssistantAdapter({
+  baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
+  token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
+});
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -40,6 +45,32 @@ app.post("/api/llm/plan", async (request, response) => {
   } catch (error) {
     response.status(error.statusCode || 500).json({
       error: error.message || "LLM planning failed",
+    });
+  }
+});
+
+app.get("/api/adapters/home-assistant/status", (_request, response) => {
+  response.json(homeAssistantAdapter.getStatus());
+});
+
+app.get("/api/adapters/home-assistant/entities", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const entities = await homeAssistantAdapter.discoverEntities();
+    response.json({
+      adapter: homeAssistantAdapter.id,
+      count: entities.length,
+      entities,
+    });
+  } catch (error) {
+    response.status(502).json({
+      error: error.message || "Home Assistant discovery failed",
     });
   }
 });
