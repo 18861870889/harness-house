@@ -1,3 +1,5 @@
+import { validatePlanSteps } from "./deviceRuntime.js";
+
 export const rooms = [
   {
     id: "entry",
@@ -447,18 +449,33 @@ export function commandStep(device, capability, value, reason) {
   };
 }
 
-export function createPlan({ input, path, intent, confidence, steps, summary, needsConfirmation = false }) {
-  const highRisk = steps.some((step) => step.risk === "high");
-  const sensitive = steps.some((step) => step.risk === "sensitive");
+export function createPlan({
+  input,
+  path,
+  intent,
+  confidence,
+  steps,
+  summary,
+  devices,
+  needsConfirmation = false,
+}) {
+  const validation = devices ? validatePlanSteps(steps, devices) : { validSteps: steps, rejected: [] };
+  const highRisk = validation.validSteps.some((step) => step.risk === "high");
+  const sensitive = validation.validSteps.some((step) => step.risk === "sensitive");
+  const confirmationRequired = validation.validSteps.some((step) => step.confirmation === "always");
   return {
     id: crypto.randomUUID(),
     input,
     path,
     intent,
     confidence,
-    steps,
-    summary,
-    needsConfirmation: needsConfirmation || highRisk || sensitive,
+    steps: validation.validSteps,
+    rejectedSteps: validation.rejected,
+    summary:
+      validation.rejected.length > 0 && validation.validSteps.length === 0
+        ? `${summary} 但计划被能力边界拦截：${validation.rejected.map((item) => item.message).join("；")}`
+        : summary,
+    needsConfirmation: needsConfirmation || highRisk || sensitive || confirmationRequired,
     createdAt: now(),
   };
 }
@@ -480,6 +497,7 @@ export function parseCommand(input, devices, context = {}) {
       path: "fast",
       intent: "query_home_state",
       confidence: 0.99,
+      devices,
       steps: [],
       summary: summarizeHome(devices),
     });
@@ -493,6 +511,7 @@ export function parseCommand(input, devices, context = {}) {
       path: "fast",
       intent: "high_risk_control",
       confidence: 0.96,
+      devices,
       needsConfirmation: true,
       steps: [
         commandStep(
@@ -563,6 +582,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "device_not_found",
       confidence: 0.92,
+      devices,
       steps: [],
       summary: `${getRoomName(roomId)}没有找到${deviceTypeNames[matchedType]}。`,
     });
@@ -575,6 +595,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "dry_laundry",
       confidence: explicitRoomId ? 0.98 : 0.91,
+      devices,
       steps: [commandStep(device, "set_position", value, `将${device.name}${value > 0 ? "降到晾晒位" : "收起"}。`)],
       summary: `${device.name}将${value > 0 ? "降到晾晒位" : "收起"}。`,
     });
@@ -587,6 +608,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "set_temperature",
       confidence: 0.98,
+      devices,
       steps: [
         commandStep(device, "turn_on", true, "调温前先确保空调开启。"),
         commandStep(device, "set_temperature", temp, `将${device.name}设置为 ${temp} 度。`),
@@ -602,6 +624,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "set_cover",
       confidence: 0.96,
+      devices,
       steps: [commandStep(device, "set_position", value, `设置${device.name}开合到 ${value}%。`)],
       summary: `${device.name}将调整到 ${value}%。`,
     });
@@ -613,6 +636,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "robot_control",
       confidence: 0.94,
+      devices,
       steps: [
         commandStep(
           device,
@@ -631,6 +655,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
       path: "fast",
       intent: "appliance_control",
       confidence: 0.9,
+      devices,
       needsConfirmation: true,
       steps: [
         commandStep(
@@ -652,6 +677,7 @@ function parseDirectControl(input, text, devices, currentRoomId) {
     path: "fast",
     intent: "control_device",
     confidence: 0.97,
+    devices,
     steps: [
       commandStep(
         device,
@@ -699,6 +725,7 @@ function buildSleepPlan(input, devices) {
     path: "llm-sim",
     intent: "scene_sleep",
     confidence: 0.91,
+    devices,
     steps,
     summary: "已生成睡眠场景：关闭公共区域设备，主卧灯光调暗，空调 25 度，窗帘留 20%。",
   });
@@ -710,6 +737,7 @@ function buildMoviePlan(input, devices) {
     path: "llm-sim",
     intent: "scene_movie",
     confidence: 0.94,
+    devices,
     steps: [
       commandStep(devices.living_tv, "turn_on", true, "观影场景打开电视。"),
       commandStep(devices.living_light, "set_brightness", 22, "观影场景降低客厅亮度。"),
@@ -733,6 +761,7 @@ function buildAwayPlan(input, devices) {
     path: "llm-sim",
     intent: "scene_away",
     confidence: 0.9,
+    devices,
     steps,
     summary: "已生成离家场景：关闭灯光、风扇、电视，并检查门窗状态。",
   });
@@ -752,6 +781,7 @@ function buildKitchenComfortPlan(input, devices) {
     path: "llm-sim",
     intent: "comfort_kitchen",
     confidence: occupied ? 0.88 : 0.68,
+    devices,
     steps,
     summary: occupied
       ? "检测到厨房有人，准备打开厨房风扇并保持基础照明。"
@@ -767,6 +797,7 @@ function buildPetFeedingPlan(input, devices) {
     path: "fast",
     intent: "feed_pet",
     confidence: 0.96,
+    devices,
     needsConfirmation: tooMuch,
     steps: [
       commandStep(
@@ -790,6 +821,7 @@ function buildSimulatedLlmPlan(input, devices, currentRoomId) {
       path: "llm-sim",
       intent: "dim_current_room",
       confidence: 0.76,
+      devices,
       steps: [
         commandStep(
           light,
@@ -811,6 +843,7 @@ function buildSimulatedLlmPlan(input, devices, currentRoomId) {
       path: "llm-sim",
       intent: "adjust_climate",
       confidence: 0.72,
+      devices,
       needsConfirmation: true,
       steps: [
         commandStep(ac, "turn_on", true, "根据温感反馈，先确保空调开启。"),
@@ -825,6 +858,7 @@ function buildSimulatedLlmPlan(input, devices, currentRoomId) {
     path: "llm-sim",
     intent: "needs_clarification",
     confidence: 0.45,
+    devices,
     steps: [],
     summary: "我还不能稳定理解这条指令。你可以试试“关客厅灯”“我要睡了”“厨房有点闷”。",
   });

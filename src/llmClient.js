@@ -1,18 +1,9 @@
 import { commandStep, createPlan } from "./simulator.js";
-
-const ALLOWED_CAPABILITIES = new Set([
-  "turn_on",
-  "turn_off",
-  "set_brightness",
-  "set_temperature",
-  "set_speed",
-  "set_position",
-  "start_robot",
-  "dock_robot",
-  "start_cycle",
-  "stop_cycle",
-  "dispense_food",
-]);
+import {
+  createManifestRegistry,
+  summarizeManifestsForPlanner,
+  validateActionAgainstManifest,
+} from "./deviceRuntime.js";
 
 export async function getLlmStatus() {
   try {
@@ -42,7 +33,7 @@ export async function requestLlmPlan({ input, devices, currentRoomId, selectedRo
         input,
         currentRoomId,
         selectedRoomId,
-        devices: summarizeDevicesForLlm(devices),
+        devices: summarizeManifestsForPlanner(devices),
       }),
       signal: controller.signal,
     });
@@ -59,62 +50,25 @@ export async function requestLlmPlan({ input, devices, currentRoomId, selectedRo
   }
 }
 
-function summarizeDevicesForLlm(devices) {
-  return Object.values(devices).map((device) => ({
-    id: device.id,
-    name: device.name,
-    roomId: device.roomId,
-    type: device.type,
-    risk: device.risk,
-    state: pickState(device),
-  }));
-}
-
-function pickState(device) {
-  const state = {};
-  for (const key of [
-    "on",
-    "brightness",
-    "temperature",
-    "mode",
-    "speed",
-    "position",
-    "detected",
-    "open",
-    "status",
-    "battery",
-    "portionsToday",
-    "lastFeed",
-    "privacyMode",
-    "minutesLeft",
-  ]) {
-    if (key in device) state[key] = device[key];
-  }
-  return state;
-}
-
-function normalizeLlmDraft(input, draft, devices) {
+export function normalizeLlmDraft(input, draft, devices) {
   const actions = Array.isArray(draft.actions) ? draft.actions : [];
   const steps = [];
   const rejected = [];
+  const manifests = createManifestRegistry(devices);
 
   for (const action of actions) {
     const device = devices[action.device_id];
-    const capability = action.capability;
-    if (!device) {
-      rejected.push(`unknown device: ${action.device_id}`);
-      continue;
-    }
-    if (!ALLOWED_CAPABILITIES.has(capability)) {
-      rejected.push(`unsupported capability: ${capability}`);
+    const result = validateActionAgainstManifest(action, manifests[action.device_id]);
+    if (!result.ok) {
+      rejected.push(`${result.code}: ${result.message}`);
       continue;
     }
     steps.push(
       commandStep(
         device,
-        capability,
-        normalizeValue(action.value),
-        action.reason || `LLM requested ${capability} for ${device.name}`,
+        result.action.capability,
+        result.action.value,
+        action.reason || `LLM requested ${result.action.capability} for ${device.name}`,
       ),
     );
   }
@@ -128,6 +82,7 @@ function normalizeLlmDraft(input, draft, devices) {
     path: "llm-real",
     intent: draft.intent || "llm_control",
     confidence: clampConfidence(draft.confidence),
+    devices,
     needsConfirmation,
     steps,
     summary:
@@ -136,17 +91,6 @@ function normalizeLlmDraft(input, draft, devices) {
         ? `真实大模型生成了 ${steps.length} 个设备动作。`
         : `真实大模型没有生成可执行动作。${rejected.join("；")}`),
   });
-}
-
-function normalizeValue(value) {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed === "true") return true;
-    if (trimmed === "false") return false;
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    return trimmed;
-  }
-  return value;
 }
 
 function clampConfidence(value) {

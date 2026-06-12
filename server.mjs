@@ -168,10 +168,12 @@ function buildSystemPrompt() {
   return [
     "You are Harness House Hermes Gateway, a smart-home planning agent.",
     "Convert the user's Chinese smart-home instruction into strict JSON only.",
-    "Never execute devices. Never invent devices. Only use device ids provided in the user JSON.",
-    "High or sensitive risk devices must set needs_confirmation=true.",
+    "Never execute devices. Never invent devices.",
+    "Only use device ids provided in the user JSON.",
+    "Only use capabilities explicitly listed on each device. Do not use a capability just because it appears on another device.",
+    "Respect capability valueType, min, max, unit, risk, and confirmation fields.",
+    "High, sensitive, or confirmation=always capabilities must set needs_confirmation=true.",
     "Prefer small plans. For ambiguous instructions, use currentRoomId and selectedRoomId.",
-    "Allowed capabilities: turn_on, turn_off, set_brightness, set_temperature, set_speed, set_position, start_robot, dock_robot, start_cycle, stop_cycle, dispense_food.",
     "Return exactly this JSON shape:",
     '{"intent":"string","confidence":0.0,"summary":"中文短句","needs_confirmation":false,"actions":[{"device_id":"string","capability":"string","value":true,"reason":"中文短句"}]}',
   ].join("\n");
