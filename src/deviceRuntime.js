@@ -35,6 +35,8 @@ const STATE_KEYS = [
   "lastFeed",
   "privacyMode",
   "minutesLeft",
+  "value",
+  "unit",
   "online",
 ];
 

@@ -212,6 +212,10 @@ function createHarnessDeviceFromState({ state, domain, objectId, type }) {
     base.portionsToday = 0;
     base.lastFeed = "--:--";
   }
+  if (type === "generic_sensor" || type === "generic_entity") {
+    base.value = String(state.state ?? "");
+    if (attributes.unit_of_measurement) base.unit = attributes.unit_of_measurement;
+  }
 
   return base;
 }
@@ -227,7 +231,9 @@ function mapDomainToType(domain, state) {
   if (domain === "camera") return "camera";
   if (domain === "switch") return mapSwitchType(name);
   if (domain === "binary_sensor") return mapBinarySensorType(state);
-  return "switch";
+  if (domain === "sensor") return "generic_sensor";
+  if (domain === "person" || domain === "device_tracker") return "presence_sensor";
+  return "generic_entity";
 }
 
 function mapSwitchType(name) {
@@ -250,6 +256,7 @@ function inferRisk(type, domain, name) {
   if (["gas_heater"].includes(type) || /燃气|gas/.test(name)) return "high";
   if (["camera", "presence_sensor", "motion_sensor", "door_sensor"].includes(type)) return "sensitive";
   if (["washer", "dryer", "robot_vacuum", "pet_feeder", "drying_rack"].includes(type)) return "medium";
+  if (["lock", "alarm_control_panel"].includes(domain)) return "high";
   if (domain === "switch" && /heater|热水/.test(name)) return "high";
   return "low";
 }

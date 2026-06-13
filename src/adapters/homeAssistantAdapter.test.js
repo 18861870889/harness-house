@@ -91,6 +91,35 @@ describe("home assistant adapter", () => {
     expect(mapped.manifest.capabilities).toEqual([]);
   });
 
+  it("maps unsupported Home Assistant domains as read-only entities", () => {
+    const sensor = mapHomeAssistantState({
+      entity_id: "sensor.sun_next_dawn",
+      state: "2026-06-13T20:28:37+00:00",
+      attributes: {
+        friendly_name: "Sun Next dawn",
+        device_class: "timestamp",
+      },
+    });
+    const update = mapHomeAssistantState({
+      entity_id: "update.home_assistant_core_update",
+      state: "off",
+      attributes: {
+        friendly_name: "Home Assistant Core Update",
+      },
+    });
+
+    expect(sensor.suggestedDevice).toMatchObject({
+      type: "generic_sensor",
+      value: "2026-06-13T20:28:37+00:00",
+    });
+    expect(sensor.manifest.capabilities).toEqual([]);
+    expect(update.suggestedDevice).toMatchObject({
+      type: "generic_entity",
+      value: "off",
+    });
+    expect(update.manifest.capabilities).toEqual([]);
+  });
+
   it("throws when discovery is requested without configuration", async () => {
     const adapter = createHomeAssistantAdapter();
 

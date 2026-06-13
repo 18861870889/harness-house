@@ -438,6 +438,9 @@ function deviceStateLabel(device) {
     return device.status === "running" ? `${device.minutesLeft}分钟` : device.status;
   }
   if (device.type === "drying_rack") return `${device.position}%`;
+  if (device.type === "generic_sensor" || device.type === "generic_entity") {
+    return [device.value, device.unit].filter(Boolean).join(" ") || "只读";
+  }
   return "待机";
 }
 

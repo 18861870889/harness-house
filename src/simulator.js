@@ -130,6 +130,8 @@ export const deviceTypeNames = {
   washer: "洗衣机",
   dryer: "烘干机",
   camera: "监控",
+  generic_sensor: "只读传感器",
+  generic_entity: "只读实体",
 };
 
 const now = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
