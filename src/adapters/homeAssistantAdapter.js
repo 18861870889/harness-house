@@ -1,4 +1,6 @@
 import { createDeviceManifest, pickDeviceState, validateActionAgainstManifest } from "../deviceRuntime.js";
+import { mapHomeAssistantGraphToHcm } from "./homeAssistantCatalog.js";
+import { fetchHomeAssistantGraph } from "./homeAssistantRegistry.js";
 
 export const HOME_ASSISTANT_ADAPTER_ID = "home_assistant";
 const LOW_RISK_CONTROL_TYPES = new Set(["light", "fan", "curtain", "tv"]);
@@ -31,6 +33,29 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
       if (!Array.isArray(states)) throw new Error("Home Assistant /api/states did not return an array");
 
       return states.map(mapHomeAssistantState).filter(Boolean);
+    },
+    async discoverDeviceGraph() {
+      if (!normalizedBaseUrl || !token) {
+        throw new Error("Home Assistant adapter is not configured");
+      }
+
+      return fetchHomeAssistantGraph({
+        baseUrl: normalizedBaseUrl,
+        token,
+        fetchImpl,
+      });
+    },
+    async discoverHcmHome() {
+      if (!normalizedBaseUrl || !token) {
+        throw new Error("Home Assistant adapter is not configured");
+      }
+
+      const graph = await fetchHomeAssistantGraph({
+        baseUrl: normalizedBaseUrl,
+        token,
+        fetchImpl,
+      });
+      return mapHomeAssistantGraphToHcm(graph);
     },
     async readEntity(entityId) {
       if (!normalizedBaseUrl || !token) {

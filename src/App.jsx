@@ -9,8 +9,10 @@ import {
   Home,
   Layers3,
   LockKeyhole,
+  Network,
   Play,
   Power,
+  RefreshCw,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -19,6 +21,7 @@ import {
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
+import { getHcmHome } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
@@ -72,6 +75,11 @@ export default function App() {
     mode: "simulated",
     model: "simulated",
   });
+  const [hcmHome, setHcmHome] = useState(null);
+  const [hcmStatus, setHcmStatus] = useState({
+    state: "idle",
+    error: null,
+  });
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -101,6 +109,21 @@ export default function App() {
   useEffect(() => {
     getLlmStatus().then(setLlmStatus);
   }, []);
+
+  const refreshHcmHome = useCallback(async () => {
+    setHcmStatus({ state: "loading", error: null });
+    try {
+      const home = await getHcmHome();
+      setHcmHome(home);
+      setHcmStatus({ state: "ready", error: null });
+    } catch (error) {
+      setHcmStatus({ state: "error", error: error.message });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHcmHome();
+  }, [refreshHcmHome]);
 
   async function submitCommand(raw = input) {
     const command = raw.trim();
@@ -258,6 +281,7 @@ export default function App() {
       <aside className="left-rail">
         <Header currentRoomId={currentRoomId} activeCount={activeDevices.length} llmStatus={llmStatus} />
         <SystemMetrics devices={devices} />
+        <HcmCatalog home={hcmHome} status={hcmStatus} onRefresh={refreshHcmHome} />
         <RoomSelector selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
       </aside>
@@ -366,6 +390,69 @@ function Metric({ label, value, tone = "normal" }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function HcmCatalog({ home, status, onRefresh }) {
+  const areaCounts = useMemo(() => {
+    if (!home) return [];
+    const spaces = new Map(home.spaces.map((space) => [space.id, space.name]));
+    const counts = {};
+    for (const thing of home.things) {
+      const name = spaces.get(thing.spaceId) || thing.spaceId;
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    return Object.entries(counts).sort(([, a], [, b]) => b - a);
+  }, [home]);
+
+  const visibleThings = useMemo(() => {
+    if (!home) return [];
+    return [...home.things]
+      .sort((a, b) => (b.state.autoExecutable ?? 0) - (a.state.autoExecutable ?? 0))
+      .slice(0, 6);
+  }, [home]);
+
+  return (
+    <section className="panel hcm-panel">
+      <div className="panel-title">
+        <Network size={17} />
+        <h2>Home Model</h2>
+        <button className="mini-icon-button" type="button" onClick={onRefresh} title="同步真实设备">
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      {status.state === "loading" && <p className="hcm-note">正在同步真实设备能力...</p>}
+      {status.state === "error" && <p className="hcm-error">{status.error}</p>}
+      {home && (
+        <>
+          <div className="hcm-metrics">
+            <Metric label="真实设备" value={`${home.stats.thingCount}`} />
+            <Metric label="能力" value={`${home.stats.capabilityCount}`} />
+            <Metric label="可自动执行" value={`${home.stats.autoExecutableCapabilities}`} />
+            <Metric label="待确认绑定" value={`${home.stats.unresolvedBindingCount}`} tone="danger" />
+          </div>
+          <div className="hcm-area-strip">
+            {areaCounts.slice(0, 6).map(([area, count]) => (
+              <span key={area}>
+                {area} <strong>{count}</strong>
+              </span>
+            ))}
+          </div>
+          <div className="hcm-thing-list">
+            {visibleThings.map((thing) => (
+              <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
+                <span>{thing.type}</span>
+                <strong>{thing.name}</strong>
+                <small>
+                  {thing.state.autoExecutable}/{thing.state.controllable} auto
+                </small>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

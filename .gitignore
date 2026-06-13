@@ -34,6 +34,10 @@ Thumbs.db
 *.log
 logs/
 
+# Local Home Assistant discovery snapshots
+ha-*-summary.json
+ha-*-snapshot.json
+
 # Virtual env
 venv/
 .venv/

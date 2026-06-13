@@ -573,6 +573,110 @@ button {
   color: var(--cyan);
 }
 
+.mini-icon-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  color: var(--cyan);
+  background: rgba(15, 23, 42, 0.62);
+  cursor: pointer;
+}
+
+.hcm-note,
+.hcm-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hcm-note {
+  color: var(--muted);
+}
+
+.hcm-error {
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+
+.hcm-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.hcm-area-strip {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.hcm-area-strip span {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.hcm-area-strip strong {
+  color: var(--cyan);
+}
+
+.hcm-thing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 178px;
+  margin-top: 9px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.hcm-thing {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.hcm-thing span,
+.hcm-thing strong,
+.hcm-thing small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hcm-thing span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hcm-thing strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.hcm-thing small {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .send-button:disabled,
 .example-chip:disabled {
   cursor: not-allowed;

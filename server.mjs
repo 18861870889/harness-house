@@ -75,6 +75,24 @@ app.get("/api/adapters/home-assistant/entities", async (_request, response) => {
   }
 });
 
+app.get("/api/hcm/home", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const home = await homeAssistantAdapter.discoverHcmHome();
+    response.json(home);
+  } catch (error) {
+    response.status(502).json({
+      error: error.message || "Home Capability Model sync failed",
+    });
+  }
+});
+
 app.post("/api/adapters/home-assistant/actions", async (request, response) => {
   if (!homeAssistantAdapter.isConfigured()) {
     response.status(503).json({

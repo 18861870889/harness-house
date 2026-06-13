@@ -164,6 +164,47 @@ Home Assistant Entity
 - 网络失败、token 错误、entity missing 测试。
 - 真实 HA 手工验收清单。
 
+### v0.3.2 - Harness Capability Model & Provider Sync
+
+状态：进行中。
+
+目标：
+
+不再让 AI、UI 和执行链路直接依赖 Home Assistant 的 entity 结构，而是定义 Harness House 自己的家庭能力模型：
+
+```text
+Provider Raw Graph
+  -> Provider Adapter
+  -> Harness Capability Model
+  -> Policy Engine
+  -> AI Planner / UI / Executor
+```
+
+核心原则：
+
+- HA、Matter、米家、Tuya、Apple Home 都只是 provider。
+- Harness House 的上层只消费 `Space -> Thing -> Capability -> State -> Action -> Policy`。
+- provider 设备变动通过 snapshot hash + diff 被发现。
+- 能自动判断的绑定直接进入 HCM。
+- 语义不确定或高风险的绑定进入 `unresolvedBindings`。
+
+新增能力：
+
+- `HCM` schema。
+- `ProviderSync` snapshot hash 和 HCM diff。
+- Home Assistant device/entity/area registry 读取。
+- HA registry + states -> HCM mapper。
+- 真实设备目录 UI。
+- 本地 HA 设备快照忽略规则，避免家庭设备明细误提交。
+
+验收：
+
+- 当前 HA 中 45 个 Xiaomi Home 物理设备会聚合成 HCM things，而不是暴露为 1600+ 个 AI 设备。
+- `number/select/text/event` 默认不会自动执行。
+- 开关面板中明确对应灯具的通道可被标成低风险候选能力。
+- 配置、互控、密码、摄像头、燃气等能力默认阻断或需要确认。
+- HCM endpoint 可被 UI 获取并展示真实设备统计。
+
 ### v0.4 - Mapping UI & Device Boundary Review
 
 目标：
