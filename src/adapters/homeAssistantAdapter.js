@@ -1,6 +1,7 @@
-import { createDeviceManifest, pickDeviceState } from "../deviceRuntime.js";
+import { createDeviceManifest, pickDeviceState, validateActionAgainstManifest } from "../deviceRuntime.js";
 
 export const HOME_ASSISTANT_ADAPTER_ID = "home_assistant";
+const LOW_RISK_CONTROL_TYPES = new Set(["light", "fan", "curtain", "tv"]);
 
 export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch } = {}) {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
@@ -18,10 +19,7 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
       }
 
       const response = await fetchImpl(`${normalizedBaseUrl}/api/states`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(token),
       });
 
       if (!response.ok) {
@@ -34,7 +32,85 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
 
       return states.map(mapHomeAssistantState).filter(Boolean);
     },
+    async readEntity(entityId) {
+      if (!normalizedBaseUrl || !token) {
+        throw new Error("Home Assistant adapter is not configured");
+      }
+
+      return readHomeAssistantEntity({ baseUrl: normalizedBaseUrl, token, fetchImpl, entityId });
+    },
+    async executeAction(action) {
+      if (!normalizedBaseUrl || !token) {
+        throw new Error("Home Assistant adapter is not configured");
+      }
+
+      return executeHomeAssistantAction({ baseUrl: normalizedBaseUrl, token, fetchImpl, action });
+    },
   };
+}
+
+export async function executeHomeAssistantAction({ baseUrl, token, fetchImpl = fetch, action }) {
+  const entity = await readHomeAssistantEntity({ baseUrl, token, fetchImpl, entityId: action.entityId });
+  const serviceCall = buildServiceCall(entity, action);
+  const response = await fetchImpl(`${baseUrl}/api/services/${serviceCall.domain}/${serviceCall.service}`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(serviceCall.serviceData),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Home Assistant service call failed ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  const changedStates = await response.json();
+  return {
+    status: "executed",
+    adapter: HOME_ASSISTANT_ADAPTER_ID,
+    entityId: entity.entityId,
+    domain: serviceCall.domain,
+    service: serviceCall.service,
+    serviceData: serviceCall.serviceData,
+    changedStates: Array.isArray(changedStates) ? changedStates.map(mapHomeAssistantState).filter(Boolean) : [],
+  };
+}
+
+export async function readHomeAssistantEntity({ baseUrl, token, fetchImpl = fetch, entityId }) {
+  if (!entityId || typeof entityId !== "string") throw new Error("entityId is required");
+  const response = await fetchImpl(`${baseUrl}/api/states/${encodeURIComponent(entityId)}`, {
+    headers: authHeaders(token),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Home Assistant entity request failed ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  return mapHomeAssistantState(await response.json());
+}
+
+export function buildServiceCall(entity, action) {
+  if (!entity?.manifest) throw new Error("Mapped Home Assistant entity is required");
+  if (!LOW_RISK_CONTROL_TYPES.has(entity.manifest.type) || entity.manifest.risk !== "low") {
+    throw new Error(`${entity.entityId} is not eligible for low-risk Home Assistant control`);
+  }
+
+  const validation = validateActionAgainstManifest(
+    {
+      device_id: entity.manifest.id,
+      capability: action.capability,
+      value: action.value,
+    },
+    entity.manifest,
+  );
+  if (!validation.ok) throw new Error(validation.message);
+  if (validation.action.risk !== "low" || validation.action.confirmation !== "never") {
+    throw new Error(`${entity.entityId} requires confirmation and cannot be auto-executed by v0.3.1`);
+  }
+
+  const serviceCall = mapCapabilityToService(entity, validation.action);
+  if (!serviceCall) throw new Error(`${entity.entityId} does not support ${action.capability} through v0.3.1`);
+  return serviceCall;
 }
 
 export function mapHomeAssistantState(state) {
@@ -52,6 +128,45 @@ export function mapHomeAssistantState(state) {
     attributes: pickSafeAttributes(state.attributes ?? {}),
     suggestedDevice: harnessDevice,
     manifest: createDeviceManifest(harnessDevice, HOME_ASSISTANT_ADAPTER_ID),
+  };
+}
+
+function mapCapabilityToService(entity, action) {
+  const serviceData = { entity_id: entity.entityId };
+  if (action.capability === "turn_on") {
+    return { domain: entity.domain, service: "turn_on", serviceData };
+  }
+  if (action.capability === "turn_off") {
+    return { domain: entity.domain, service: "turn_off", serviceData };
+  }
+  if (action.capability === "set_brightness" && entity.domain === "light") {
+    return {
+      domain: "light",
+      service: "turn_on",
+      serviceData: { ...serviceData, brightness_pct: action.value },
+    };
+  }
+  if (action.capability === "set_speed" && entity.domain === "fan") {
+    return {
+      domain: "fan",
+      service: "set_percentage",
+      serviceData: { ...serviceData, percentage: Math.round((action.value / 3) * 100) },
+    };
+  }
+  if (action.capability === "set_position" && entity.domain === "cover") {
+    return {
+      domain: "cover",
+      service: "set_cover_position",
+      serviceData: { ...serviceData, position: action.value },
+    };
+  }
+  return null;
+}
+
+function authHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
   };
 }
 

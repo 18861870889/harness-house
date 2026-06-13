@@ -75,6 +75,26 @@ app.get("/api/adapters/home-assistant/entities", async (_request, response) => {
   }
 });
 
+app.post("/api/adapters/home-assistant/actions", async (request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const payload = request.body ?? {};
+    validateHomeAssistantActionRequest(payload);
+    const result = await homeAssistantAdapter.executeAction(payload);
+    response.json(result);
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "Home Assistant action failed",
+    });
+  }
+});
+
 const vite = await createViteServer({
   server: {
     middlewareMode: true,
@@ -132,6 +152,16 @@ function validatePlanRequest(payload) {
   }
   if (!Array.isArray(payload.devices) || payload.devices.length === 0) {
     throw badRequest("devices are required");
+  }
+}
+
+function validateHomeAssistantActionRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.entityId !== "string" || !payload.entityId.trim()) {
+    throw badRequest("entityId is required");
+  }
+  if (typeof payload.capability !== "string" || !payload.capability.trim()) {
+    throw badRequest("capability is required");
   }
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createHomeAssistantAdapter, mapHomeAssistantState } from "./homeAssistantAdapter.js";
+import {
+  buildServiceCall,
+  createHomeAssistantAdapter,
+  executeHomeAssistantAction,
+  mapHomeAssistantState,
+} from "./homeAssistantAdapter.js";
 
 describe("home assistant adapter", () => {
   it("reports unconfigured status without exposing secrets", () => {
@@ -90,5 +95,116 @@ describe("home assistant adapter", () => {
     const adapter = createHomeAssistantAdapter();
 
     await expect(adapter.discoverEntities()).rejects.toThrow("not configured");
+  });
+
+  it("builds low-risk service calls for supported domains", () => {
+    const light = mapHomeAssistantState({
+      entity_id: "light.living_room",
+      state: "on",
+      attributes: { friendly_name: "客厅灯" },
+    });
+    const curtain = mapHomeAssistantState({
+      entity_id: "cover.living_room_curtain",
+      state: "open",
+      attributes: { friendly_name: "客厅窗帘", current_position: 80 },
+    });
+
+    expect(buildServiceCall(light, { capability: "set_brightness", value: 45 })).toEqual({
+      domain: "light",
+      service: "turn_on",
+      serviceData: {
+        entity_id: "light.living_room",
+        brightness_pct: 45,
+      },
+    });
+    expect(buildServiceCall(curtain, { capability: "set_position", value: 20 })).toEqual({
+      domain: "cover",
+      service: "set_cover_position",
+      serviceData: {
+        entity_id: "cover.living_room_curtain",
+        position: 20,
+      },
+    });
+  });
+
+  it("blocks ambiguous switch and medium-risk cover controls", () => {
+    const switchEntity = mapHomeAssistantState({
+      entity_id: "switch.wall_plug",
+      state: "off",
+      attributes: { friendly_name: "墙壁插座" },
+    });
+    const dryingRack = mapHomeAssistantState({
+      entity_id: "cover.balcony_drying_rack",
+      state: "open",
+      attributes: { friendly_name: "阳台晾衣杆", current_position: 80 },
+    });
+
+    expect(() => buildServiceCall(switchEntity, { capability: "turn_on", value: true })).toThrow(
+      "not eligible",
+    );
+    expect(() => buildServiceCall(dryingRack, { capability: "set_position", value: 20 })).toThrow(
+      "not eligible",
+    );
+  });
+
+  it("executes a Home Assistant service call through the REST API", async () => {
+    const calls = [];
+    const result = await executeHomeAssistantAction({
+      baseUrl: "http://ha.local:8123",
+      token: "secret",
+      action: {
+        entityId: "light.living_room",
+        capability: "turn_off",
+        value: false,
+      },
+      fetchImpl: async (url, options = {}) => {
+        calls.push({ url, options });
+        if (url === "http://ha.local:8123/api/states/light.living_room") {
+          return {
+            ok: true,
+            async json() {
+              return {
+                entity_id: "light.living_room",
+                state: "on",
+                attributes: { friendly_name: "客厅灯" },
+              };
+            },
+          };
+        }
+        if (url === "http://ha.local:8123/api/services/light/turn_off") {
+          return {
+            ok: true,
+            async json() {
+              return [
+                {
+                  entity_id: "light.living_room",
+                  state: "off",
+                  attributes: { friendly_name: "客厅灯" },
+                },
+              ];
+            },
+          };
+        }
+        throw new Error(`unexpected url ${url}`);
+      },
+    });
+
+    expect(calls[1]).toMatchObject({
+      url: "http://ha.local:8123/api/services/light/turn_off",
+      options: {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ entity_id: "light.living_room" }),
+      },
+    });
+    expect(result).toMatchObject({
+      status: "executed",
+      domain: "light",
+      service: "turn_off",
+      changedStates: [expect.objectContaining({ entityId: "light.living_room", state: "off" })],
+    });
   });
 });

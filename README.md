@@ -103,7 +103,7 @@ If the real model times out or fails, the UI falls back to `LLM Sim` so the loca
 
 ## Home Assistant Adapter Alpha
 
-Harness House can discover Home Assistant entities and map them into preliminary Harness device manifests. This alpha adapter is read-only and does not execute real device control yet.
+Harness House can discover Home Assistant entities and map them into preliminary Harness device manifests. It can also execute low-risk actions for selected Home Assistant domains.
 
 Add local environment variables:
 
@@ -123,7 +123,17 @@ Adapter endpoints:
 ```text
 GET /api/adapters/home-assistant/status
 GET /api/adapters/home-assistant/entities
+POST /api/adapters/home-assistant/actions
 ```
+
+Low-risk control currently supports:
+
+- `light.turn_on/off` and brightness
+- `fan.turn_on/off` and percentage
+- `cover.set_cover_position` for low-risk curtains
+- `media_player.turn_on/off`
+
+Ambiguous `switch.*` entities are intentionally blocked from automatic real control until the mapping UI can confirm what the switch actually controls.
 
 ## Project Status
 

@@ -511,11 +511,12 @@ npm run test:e2e
 5. `v0.2.2`：抽出 `PlanValidator`，输出结构化 validation report。
 6. `v0.2.3`：新增 command pipeline telemetry，记录 router、planner、safety 等阶段耗时。
 7. `v0.3.0`：新增 Home Assistant Adapter Alpha，支持 discovery 和 read state。
+8. `v0.3.1`：新增 Home Assistant 低风险真实控制，支持 light、fan、cover、media_player 的受限服务调用。
 
 下一步建议：
 
-1. `v0.3.1`：接入低风险真实控制：灯、风扇、窗帘、电视。
-2. `v0.3.2`：新增 Home Assistant mock server 和 adapter contract tests。
-3. `v0.4.0`：设备映射 UI，允许用户确认房间、类型、风险等级和可执行能力。
+1. `v0.3.2`：新增 Home Assistant mock server 和 adapter contract tests。
+2. `v0.4.0`：设备映射 UI，允许用户确认房间、类型、风险等级和可执行能力。
+3. `v0.4.1`：把 HA 实时状态同步到 3D 房屋视图。
 
 完成 v0.2 后，再接 Home Assistant 会更稳。否则现在直接接 HA，后面会把品牌差异、设备能力、风险策略全堆进业务代码，后期维护成本会明显上升。
