@@ -29,6 +29,17 @@ const DECISION_POLICIES = {
   },
 };
 
+const DEFAULT_DECISION_POLICIES = {
+  [BINDING_REVIEW_DECISIONS.ALLOW_AUTO]: {
+    ...DECISION_POLICIES[BINDING_REVIEW_DECISIONS.ALLOW_AUTO],
+    reason: "默认开放可执行能力",
+  },
+  [BINDING_REVIEW_DECISIONS.BLOCK]: {
+    ...DECISION_POLICIES[BINDING_REVIEW_DECISIONS.BLOCK],
+    reason: "默认保护高风险/配置能力",
+  },
+};
+
 export function createHcmOverlay({ updatedAt = new Date().toISOString(), providers = {} } = {}) {
   return {
     version: HCM_OVERLAY_VERSION,
@@ -57,11 +68,55 @@ export function setBindingReviewDecision(
   return next;
 }
 
-export function applyHcmOverlay(home, overlay) {
+export function applyDefaultRunPolicy(
+  overlay,
+  home,
+  { providerId = home?.provider?.id ?? "home_assistant", updatedAt = new Date().toISOString() } = {},
+) {
+  const next = normalizeOverlay(overlay);
+  const provider = ensureProvider(next, providerId);
+  const summary = {
+    total: 0,
+    allowed: 0,
+    protected: 0,
+    skippedExisting: 0,
+  };
+
+  for (const binding of home?.unresolvedBindings ?? []) {
+    if (!binding.entityId) continue;
+    summary.total += 1;
+    if (provider.bindings[binding.entityId]?.decision) {
+      summary.skippedExisting += 1;
+      continue;
+    }
+
+    const decision = recommendDefaultDecision(binding);
+    provider.bindings[binding.entityId] = {
+      ...provider.bindings[binding.entityId],
+      entityId: binding.entityId,
+      decision,
+      policy: DECISION_POLICIES[decision],
+      updatedAt,
+    };
+    if (decision === BINDING_REVIEW_DECISIONS.ALLOW_AUTO) summary.allowed += 1;
+    else summary.protected += 1;
+  }
+
+  next.updatedAt = updatedAt;
+  return { overlay: next, summary };
+}
+
+export function applyHcmOverlay(home, overlay, { defaultRunPolicy = true } = {}) {
   const normalizedOverlay = normalizeOverlay(overlay);
   const providerId = home.provider?.id ?? "unknown";
-  const providerOverlay = normalizedOverlay.providers[providerId];
-  if (!providerOverlay) return attachOverlayStats(home, normalizedOverlay);
+  const providerOverlay = normalizedOverlay.providers[providerId] ?? { bindings: {}, things: {} };
+  const unresolvedByEntity = new Map(home.unresolvedBindings.map((binding) => [binding.entityId, binding]));
+  const defaultPolicy = {
+    enabled: defaultRunPolicy,
+    total: home.unresolvedBindings.length,
+    allowed: 0,
+    protected: 0,
+  };
 
   const things = home.things.map((thing) => {
     const thingOverride = providerOverlay.things[thing.id];
@@ -69,13 +124,19 @@ export function applyHcmOverlay(home, overlay) {
       ...thing,
       ...pickThingOverride(thingOverride),
       aliases: mergeAliases(thing.aliases, thingOverride?.aliases),
-      capabilities: thing.capabilities.map((capability) =>
-        applyCapabilityOverride(capability, providerOverlay.bindings[capability.binding?.entityId]),
-      ),
+      capabilities: thing.capabilities.map((capability) => {
+        const binding = unresolvedByEntity.get(capability.binding?.entityId);
+        return applyCapabilityOverride(
+          capability,
+          binding,
+          providerOverlay.bindings[capability.binding?.entityId],
+          defaultRunPolicy ? createDefaultOverride(binding, defaultPolicy) : null,
+        );
+      }),
     };
     nextThing.state = {
       ...thing.state,
-      autoExecutable: nextThing.capabilities.filter((capability) => capability.policy.autoExecutable).length,
+      autoExecutable: nextThing.capabilities.filter((capability) => isExecutableCapability(capability)).length,
       controllable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.CONTROL).length,
       readable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.SENSOR).length,
     };
@@ -89,7 +150,12 @@ export function applyHcmOverlay(home, overlay) {
     unresolvedBindings: buildUnresolvedBindings(things),
     syncedAt: home.syncedAt,
   });
-  return attachOverlayStats(nextHome, normalizedOverlay);
+  return attachOverlayStats(nextHome, normalizedOverlay, defaultPolicy);
+}
+
+export function recommendDefaultDecision(binding) {
+  if (requiresHardProtection(binding)) return BINDING_REVIEW_DECISIONS.BLOCK;
+  return BINDING_REVIEW_DECISIONS.ALLOW_AUTO;
 }
 
 export function summarizeOverlay(overlay) {
@@ -140,16 +206,47 @@ function ensureProvider(overlay, providerId) {
   return overlay.providers[providerId];
 }
 
-function applyCapabilityOverride(capability, override) {
-  if (!override?.policy) return capability;
+function applyCapabilityOverride(capability, binding, override, defaultOverride) {
+  const selectedOverride = selectEffectiveOverride(binding, override, defaultOverride);
+  if (!selectedOverride?.policy) return capability;
   return {
     ...capability,
     policy: {
       ...capability.policy,
-      ...override.policy,
-      overlayDecision: override.decision,
-      overlayUpdatedAt: override.updatedAt,
+      ...selectedOverride.policy,
+      overlayDecision: selectedOverride.decision,
+      overlayUpdatedAt: selectedOverride.updatedAt,
+      overlaySource: selectedOverride.source,
     },
+  };
+}
+
+function selectEffectiveOverride(binding, override, defaultOverride) {
+  if (
+    binding &&
+    override?.decision === BINDING_REVIEW_DECISIONS.ALLOW_AUTO &&
+    requiresHardProtection(binding)
+  ) {
+    return {
+      entityId: binding.entityId,
+      decision: `default_${BINDING_REVIEW_DECISIONS.BLOCK}`,
+      policy: DEFAULT_DECISION_POLICIES[BINDING_REVIEW_DECISIONS.BLOCK],
+      source: "hard_protection",
+    };
+  }
+  return override?.policy ? override : defaultOverride;
+}
+
+function createDefaultOverride(binding, summary) {
+  if (!binding?.entityId) return null;
+  const decision = recommendDefaultDecision(binding);
+  if (decision === BINDING_REVIEW_DECISIONS.ALLOW_AUTO) summary.allowed += 1;
+  else summary.protected += 1;
+  return {
+    entityId: binding.entityId,
+    decision: `default_${decision}`,
+    policy: DEFAULT_DECISION_POLICIES[decision],
+    source: "default_run_policy",
   };
 }
 
@@ -202,9 +299,27 @@ function shouldReview(capability) {
   return capability.policy.risk !== POLICY_LEVELS.LOW || capability.policy.autoExecutable === false;
 }
 
-function attachOverlayStats(home, overlay) {
+function isExecutableCapability(capability) {
+  return capability.policy.autoExecutable && (
+    capability.kind === CAPABILITY_KINDS.CONTROL ||
+    capability.kind === CAPABILITY_KINDS.ACTION
+  );
+}
+
+function requiresHardProtection(binding) {
+  const text = `${binding.thingName ?? ""} ${binding.entityName ?? ""} ${binding.reason ?? ""} ${binding.thingType ?? ""}`
+    .toLowerCase();
+  if (binding.suggestedRisk === POLICY_LEVELS.SENSITIVE) return true;
+  if (binding.kind === CAPABILITY_KINDS.SENSOR) return true;
+  if (binding.kind === CAPABILITY_KINDS.CONFIG) return true;
+  if (binding.valueType === "text") return true;
+  return /密码|password|燃气|gas|热水器|摄像|监控|camera|配置|config|互控|解控|绑定|物理控制锁|童锁/.test(text);
+}
+
+function attachOverlayStats(home, overlay, defaultPolicy = null) {
   return {
     ...home,
     overlay: summarizeOverlay(overlay),
+    defaultPolicy,
   };
 }

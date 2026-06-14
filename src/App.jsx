@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
-import { getHcmHome, updateHcmBindingOverride } from "./hcmClient.js";
+import { applyDefaultRunPolicy, getHcmHome, updateHcmBindingOverride } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
@@ -81,6 +81,7 @@ export default function App() {
     error: null,
   });
   const [reviewActionId, setReviewActionId] = useState(null);
+  const [defaultRunSummary, setDefaultRunSummary] = useState(null);
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -146,6 +147,22 @@ export default function App() {
     },
     [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
   );
+
+  const applyDefaultRun = useCallback(async () => {
+    if (reviewActionId) return;
+    setReviewActionId("default-run");
+    setHcmStatus({ state: "loading", error: null });
+    try {
+      const result = await applyDefaultRunPolicy({ providerId: hcmHome?.provider?.id });
+      setDefaultRunSummary(result.summary);
+      setHcmHome(result.home);
+      setHcmStatus({ state: "ready", error: null });
+    } catch (error) {
+      setHcmStatus({ state: "error", error: error.message });
+    } finally {
+      setReviewActionId(null);
+    }
+  }, [hcmHome?.provider?.id, reviewActionId]);
 
   async function submitCommand(raw = input) {
     const command = raw.trim();
@@ -308,7 +325,9 @@ export default function App() {
           status={hcmStatus}
           onRefresh={refreshHcmHome}
           onReviewAction={updateBindingReview}
+          onApplyDefaultRun={applyDefaultRun}
           reviewActionId={reviewActionId}
+          defaultRunSummary={defaultRunSummary}
         />
         <RoomSelector selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
@@ -421,7 +440,15 @@ function Metric({ label, value, tone = "normal" }) {
   );
 }
 
-function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId }) {
+function HcmCatalog({
+  home,
+  status,
+  onRefresh,
+  onReviewAction,
+  onApplyDefaultRun,
+  reviewActionId,
+  defaultRunSummary,
+}) {
   const areaCounts = useMemo(() => {
     if (!home) return [];
     const spaces = new Map(home.spaces.map((space) => [space.id, space.name]));
@@ -439,6 +466,7 @@ function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId })
       .sort((a, b) => (b.state.autoExecutable ?? 0) - (a.state.autoExecutable ?? 0))
       .slice(0, 6);
   }, [home]);
+  const defaultPolicy = defaultRunSummary ?? home?.defaultPolicy;
 
   return (
     <section className="panel hcm-panel">
@@ -447,6 +475,15 @@ function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId })
         <h2>Home Model</h2>
         <button className="mini-icon-button" type="button" onClick={onRefresh} title="同步真实设备">
           <RefreshCw size={14} />
+        </button>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={onApplyDefaultRun}
+          disabled={Boolean(reviewActionId)}
+          title="默认开放可执行能力"
+        >
+          <Play size={14} />
         </button>
       </div>
 
@@ -472,6 +509,12 @@ function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId })
               已审核 <strong>{home.overlay.bindingOverrideCount}</strong>
             </div>
           )}
+          {defaultPolicy?.enabled && (
+            <div className="default-run-summary">
+              默认开放 <strong>{defaultPolicy.allowed}</strong>
+              <span>保护 {defaultPolicy.protected}</span>
+            </div>
+          )}
           <BindingReview review={home.review} onAction={onReviewAction} actionId={reviewActionId} />
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
@@ -479,7 +522,7 @@ function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId })
                 <span>{thing.type}</span>
                 <strong>{thing.name}</strong>
                 <small>
-                  {thing.state.autoExecutable}/{thing.state.controllable} auto
+                  {thing.state.autoExecutable}/{executableCapabilityCount(thing)} auto
                 </small>
               </div>
             ))}
@@ -488,6 +531,11 @@ function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId })
       )}
     </section>
   );
+}
+
+function executableCapabilityCount(thing) {
+  return (thing.capabilities ?? []).filter((capability) => capability.kind === "control" || capability.kind === "action")
+    .length;
 }
 
 function BindingReview({ review, onAction, actionId }) {
@@ -516,6 +564,7 @@ function BindingReview({ review, onAction, actionId }) {
           </div>
         ))}
       </div>
+      <AdjustmentRecommendations recommendations={review.recommendations} />
       <div className="review-samples">
         {samples.slice(0, 3).map((item) => (
           <div className={`review-sample risk-${item.suggestedRisk}`} key={item.id}>
@@ -554,6 +603,27 @@ function BindingReview({ review, onAction, actionId }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AdjustmentRecommendations({ recommendations }) {
+  const devices = recommendations?.devices ?? [];
+  if (devices.length === 0) return null;
+
+  return (
+    <div className="adjustment-recommendations">
+      <div className="recommendation-header">
+        <span>建议调整</span>
+        <strong>{recommendations.totalDevices}</strong>
+      </div>
+      {devices.slice(0, 4).map((device) => (
+        <div className={`recommendation-item severity-${device.severity}`} key={device.thingId || device.thingName}>
+          <span>{device.thingName}</span>
+          <strong>{device.count}</strong>
+          <small>{device.action}</small>
+        </div>
+      ))}
     </div>
   );
 }

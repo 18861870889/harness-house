@@ -220,7 +220,10 @@ Provider Raw Graph
   - 允许 AI 自动执行。
   - 执行前必须确认。
   - 禁止 AI 自动执行。
+- 默认开放可执行能力：低/中风险控制和动作不再要求逐条点击。
+- 建议调整清单：把高风险、敏感、配置、语义不清项聚合到设备级建议。
 - `/api/hcm/overrides/bindings`：写入单条能力审核决策。
+- `/api/hcm/overrides/default-run`：批量固化默认开放策略。
 - `/api/hcm/home`：同步 HA 后自动套用 overlay，再重新计算 stats 和 review。
 - UI 显示已审核数量，Review Queue 样本可直接操作。
 
@@ -235,6 +238,7 @@ Provider Raw Graph
 - `allow_auto` 会把对应 binding 转为低风险、免确认、可自动执行，并移出待确认队列。
 - `require_confirmation` 会保留在待确认队列，强制执行前确认。
 - `block` 会保留在待确认队列，并标为高风险禁止自动执行。
+- 默认策略会自动开放可执行能力，但摄像头、燃气、配置/文本、敏感传感器会进入建议调整清单。
 - overlay 文件为本地运行态文件，不提交到 GitHub。
 
 ### v0.4 - Mapping UI & Device Boundary Review

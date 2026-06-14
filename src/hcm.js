@@ -83,6 +83,7 @@ export function normalizePolicy(policy = {}) {
     reason: policy.reason || "",
     overlayDecision: policy.overlayDecision,
     overlayUpdatedAt: policy.overlayUpdatedAt,
+    overlaySource: policy.overlaySource,
   };
 }
 
@@ -99,7 +100,7 @@ export function summarizeHcm(things, unresolvedBindings = []) {
     for (const capability of thing.capabilities) {
       capabilityCount += 1;
       policies[capability.policy.risk] = (policies[capability.policy.risk] || 0) + 1;
-      if (capability.policy.autoExecutable) autoExecutableCapabilities += 1;
+      if (capability.policy.autoExecutable && isExecutableKind(capability.kind)) autoExecutableCapabilities += 1;
     }
   }
 
@@ -142,7 +143,66 @@ export function summarizeBindingReview(unresolvedBindings = []) {
     byKind,
     byThingType,
     topReasons: sortedReasons.slice(0, 6),
+    recommendations: summarizeBindingRecommendations(unresolvedBindings),
     samples: unresolvedBindings.slice(0, 8),
+  };
+}
+
+export function summarizeBindingRecommendations(unresolvedBindings = []) {
+  const deviceGroups = new Map();
+
+  for (const binding of unresolvedBindings) {
+    const recommendation = recommendBindingAdjustment(binding);
+    if (!recommendation) continue;
+    const key = binding.thingId || binding.thingName || binding.entityId;
+    const current = deviceGroups.get(key) ?? {
+      thingId: binding.thingId,
+      thingName: binding.thingName || "未命名设备",
+      thingType: binding.thingType || "generic",
+      spaceId: binding.spaceId,
+      severity: recommendation.severity,
+      action: recommendation.action,
+      count: 0,
+      reasons: {},
+      examples: [],
+    };
+    current.count += 1;
+    current.severity = higherSeverity(current.severity, recommendation.severity);
+    current.action = strongerAction(current.action, recommendation.action);
+    current.reasons[binding.reason || "未分类"] = (current.reasons[binding.reason || "未分类"] || 0) + 1;
+    if (current.examples.length < 3) {
+      current.examples.push({
+        entityId: binding.entityId,
+        entityName: binding.entityName,
+        reason: binding.reason,
+      });
+    }
+    deviceGroups.set(key, current);
+  }
+
+  const devices = Array.from(deviceGroups.values())
+    .map((device) => ({
+      ...device,
+      reasons: Object.entries(device.reasons)
+        .sort(([, first], [, second]) => second - first)
+        .slice(0, 3)
+        .map(([reason, count]) => ({ reason, count })),
+    }))
+    .sort((first, second) => {
+      const severityDelta = severityRank(second.severity) - severityRank(first.severity);
+      if (severityDelta !== 0) return severityDelta;
+      return second.count - first.count;
+    });
+
+  const bySeverity = {};
+  for (const device of devices) {
+    bySeverity[device.severity] = (bySeverity[device.severity] || 0) + 1;
+  }
+
+  return {
+    totalDevices: devices.length,
+    bySeverity,
+    devices: devices.slice(0, 8),
   };
 }
 
@@ -160,6 +220,55 @@ function defaultConfirmation(risk) {
   if (risk === POLICY_LEVELS.LOW) return "never";
   if (risk === POLICY_LEVELS.MEDIUM) return "sometimes";
   return "always";
+}
+
+function isExecutableKind(kind) {
+  return kind === CAPABILITY_KINDS.CONTROL || kind === CAPABILITY_KINDS.ACTION;
+}
+
+function recommendBindingAdjustment(binding) {
+  const text = `${binding.thingName ?? ""} ${binding.entityName ?? ""} ${binding.reason ?? ""} ${binding.thingType ?? ""}`.toLowerCase();
+  if (binding.suggestedRisk === POLICY_LEVELS.SENSITIVE || /摄像|监控|camera/.test(text)) {
+    return { severity: "critical", action: "保持手动授权，避免隐私能力自动执行" };
+  }
+  if (/燃气|gas|热水器/.test(text)) {
+    return { severity: "critical", action: "保持手动确认，单独设置安全场景" };
+  }
+  if (binding.kind === CAPABILITY_KINDS.CONFIG || binding.valueType === "text" || /密码|password|配置|config|互控|解控|绑定/.test(text)) {
+    return { severity: "high", action: "保持禁止自动执行，必要时隐藏配置项" };
+  }
+  if (binding.kind === CAPABILITY_KINDS.SENSOR) {
+    return { severity: "high", action: "只作为状态输入，不作为可执行能力" };
+  }
+  if (/语义不清|确认命名|可控实体需要语义确认/.test(text)) {
+    return { severity: "medium", action: "补充别名或房间语义，确认后可自动执行" };
+  }
+  if (binding.confirmation === "always") {
+    return { severity: "medium", action: "确认是否需要保留执行前确认" };
+  }
+  return null;
+}
+
+function higherSeverity(current, next) {
+  return severityRank(next) > severityRank(current) ? next : current;
+}
+
+function strongerAction(current, next) {
+  if (severityRank(actionSeverity(next)) > severityRank(actionSeverity(current))) return next;
+  return current;
+}
+
+function actionSeverity(action) {
+  if (/隐私|手动确认|禁止/.test(action)) return "critical";
+  if (/只作为状态|隐藏/.test(action)) return "high";
+  return "medium";
+}
+
+function severityRank(severity) {
+  if (severity === "critical") return 3;
+  if (severity === "high") return 2;
+  if (severity === "medium") return 1;
+  return 0;
 }
 
 function dedupeById(items) {

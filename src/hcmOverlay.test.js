@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
 import {
   BINDING_REVIEW_DECISIONS,
+  applyDefaultRunPolicy,
   applyHcmOverlay,
   createHcmOverlay,
   setBindingReviewDecision,
@@ -119,6 +120,95 @@ describe("hcm overlay", () => {
     });
   });
 
+  it("bulk applies default run policy while protecting risky bindings", () => {
+    const home = createReviewHome();
+    home.unresolvedBindings.push({
+      id: "ha_camera:snapshot",
+      thingId: "ha_camera",
+      thingName: "猫猫监控",
+      thingType: "camera",
+      spaceId: "cat_room",
+      entityId: "button.camera_snapshot",
+      entityName: "截图",
+      kind: "action",
+      valueType: "event",
+      reason: "摄像头动作默认阻断",
+      suggestedRisk: "sensitive",
+      confirmation: "always",
+      autoExecutable: false,
+    });
+
+    const { overlay, summary } = applyDefaultRunPolicy(createHcmOverlay(), home, {
+      providerId: "home_assistant",
+    });
+
+    expect(summary).toMatchObject({
+      total: 2,
+      allowed: 1,
+      protected: 1,
+    });
+    expect(overlay.providers.home_assistant.bindings["switch.living_left"].decision).toBe("allow_auto");
+    expect(overlay.providers.home_assistant.bindings["button.camera_snapshot"].decision).toBe("block");
+  });
+
+  it("does not let stale allow overlays bypass hard protection", () => {
+    const home = createReviewHome();
+    home.things.push({
+      id: "ha_camera",
+      name: "猫猫监控",
+      type: "camera",
+      spaceId: "cat_room",
+      capabilities: [
+        {
+          id: "snapshot",
+          name: "截图",
+          kind: "action",
+          valueType: "event",
+          policy: {
+            risk: "sensitive",
+            confirmation: "always",
+            autoExecutable: false,
+            reason: "摄像头动作默认阻断",
+          },
+          binding: {
+            provider: "home_assistant",
+            entityId: "button.camera_snapshot",
+            domain: "button",
+          },
+        },
+      ],
+    });
+    home.unresolvedBindings.push({
+      id: "ha_camera:snapshot",
+      thingId: "ha_camera",
+      thingName: "猫猫监控",
+      thingType: "camera",
+      entityId: "button.camera_snapshot",
+      entityName: "截图",
+      kind: "action",
+      valueType: "event",
+      reason: "摄像头动作默认阻断",
+      suggestedRisk: "sensitive",
+      confirmation: "always",
+      autoExecutable: false,
+    });
+    const overlay = setBindingReviewDecision(createHcmOverlay(), {
+      providerId: "home_assistant",
+      entityId: "button.camera_snapshot",
+      action: BINDING_REVIEW_DECISIONS.ALLOW_AUTO,
+    });
+
+    const next = applyHcmOverlay(home, overlay);
+    const cameraCapability = next.things.find((thing) => thing.id === "ha_camera").capabilities[0];
+
+    expect(cameraCapability.policy).toMatchObject({
+      risk: "high",
+      autoExecutable: false,
+      overlayDecision: "default_block",
+      overlaySource: "hard_protection",
+    });
+  });
+
   it("keeps rebuilt review bindings deduplicated", () => {
     const home = createReviewHome();
     home.things[0].capabilities.push({
@@ -132,8 +222,23 @@ describe("hcm overlay", () => {
     const next = applyHcmOverlay(
       home,
       createHcmOverlay({ providers: { home_assistant: { bindings: {}, things: {} } } }),
+      { defaultRunPolicy: false },
     );
 
     expect(next.unresolvedBindings).toHaveLength(1);
+  });
+
+  it("applies default run policy without persisting overlay decisions", () => {
+    const home = applyHcmOverlay(createReviewHome(), createHcmOverlay());
+
+    expect(home.stats.autoExecutableCapabilities).toBe(1);
+    expect(home.unresolvedBindings).toHaveLength(0);
+    expect(home.defaultPolicy).toMatchObject({
+      enabled: true,
+      total: 1,
+      allowed: 1,
+      protected: 0,
+    });
+    expect(home.overlay.bindingOverrideCount).toBe(0);
   });
 });

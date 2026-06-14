@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createHcmHome, summarizeBindingReview } from "./hcm.js";
+import { createHcmHome, summarizeBindingRecommendations, summarizeBindingReview } from "./hcm.js";
 
 describe("harness capability model", () => {
   it("summarizes unresolved bindings for review queues", () => {
@@ -64,6 +64,49 @@ describe("harness capability model", () => {
     expect(home.review).toMatchObject({
       total: 1,
       byRisk: { medium: 1 },
+    });
+  });
+
+  it("recommends device-level adjustments instead of per-entity review noise", () => {
+    const recommendations = summarizeBindingRecommendations([
+      {
+        thingId: "camera",
+        thingName: "猫猫监控",
+        thingType: "camera",
+        kind: "action",
+        suggestedRisk: "sensitive",
+        reason: "摄像头动作默认阻断",
+        entityName: "截图",
+      },
+      {
+        thingId: "camera",
+        thingName: "猫猫监控",
+        thingType: "camera",
+        kind: "config",
+        suggestedRisk: "high",
+        reason: "配置/文本字段禁止自动写入",
+        entityName: "录像配置",
+      },
+      {
+        thingId: "switch",
+        thingName: "沙发右侧一号开关",
+        thingType: "switch_panel",
+        kind: "control",
+        suggestedRisk: "medium",
+        reason: "开关通道语义不清，需要用户确认命名",
+        entityName: "左键",
+      },
+    ]);
+
+    expect(recommendations.totalDevices).toBe(2);
+    expect(recommendations.devices[0]).toMatchObject({
+      thingName: "猫猫监控",
+      severity: "critical",
+      count: 2,
+    });
+    expect(recommendations.devices[1]).toMatchObject({
+      thingName: "沙发右侧一号开关",
+      severity: "medium",
     });
   });
 });

@@ -3,7 +3,12 @@ import { createServer as createViteServer } from "vite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
-import { applyHcmOverlay, createHcmOverlay, setBindingReviewDecision } from "./src/hcmOverlay.js";
+import {
+  applyDefaultRunPolicy,
+  applyHcmOverlay,
+  createHcmOverlay,
+  setBindingReviewDecision,
+} from "./src/hcmOverlay.js";
 
 const app = express();
 loadLocalEnv();
@@ -117,6 +122,33 @@ app.post("/api/hcm/overrides/bindings", (request, response) => {
   }
 });
 
+app.post("/api/hcm/overrides/default-run", async (request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const payload = request.body ?? {};
+    validateDefaultRunRequest(payload);
+    const home = await homeAssistantAdapter.discoverHcmHome();
+    const { overlay, summary } = applyDefaultRunPolicy(readHcmOverlay(), home, {
+      providerId: payload.providerId || home.provider?.id || HOME_ASSISTANT_ADAPTER_ID,
+    });
+    writeHcmOverlay(overlay);
+    response.json({
+      summary,
+      home: applyHcmOverlay(home, overlay),
+    });
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "HCM default-run update failed",
+    });
+  }
+});
+
 app.post("/api/adapters/home-assistant/actions", async (request, response) => {
   if (!homeAssistantAdapter.isConfigured()) {
     response.status(503).json({
@@ -215,6 +247,13 @@ function validateBindingOverrideRequest(payload) {
   if (typeof payload.action !== "string" || !payload.action.trim()) {
     throw badRequest("action is required");
   }
+  if (payload.providerId !== undefined && typeof payload.providerId !== "string") {
+    throw badRequest("providerId must be a string");
+  }
+}
+
+function validateDefaultRunRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
   if (payload.providerId !== undefined && typeof payload.providerId !== "string") {
     throw badRequest("providerId must be a string");
   }
