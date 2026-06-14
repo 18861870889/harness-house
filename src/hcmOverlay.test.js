@@ -210,6 +210,68 @@ describe("hcm overlay", () => {
     });
   });
 
+  it("does not let stale allow overlays expose config domains as executable", () => {
+    const home = createReviewHome();
+    home.things[0].capabilities.push({
+      id: "countdown",
+      name: "倒计时",
+      kind: "config",
+      valueType: "number",
+      state: 0,
+      policy: {
+        risk: "high",
+        confirmation: "always",
+        autoExecutable: false,
+        reason: "配置项禁止由 AI 自动修改",
+      },
+      binding: {
+        provider: "home_assistant",
+        entityId: "number.living_countdown",
+        domain: "number",
+      },
+    });
+    home.unresolvedBindings.push({
+      id: "ha_switch:countdown",
+      thingId: "ha_switch",
+      thingName: "客厅开关",
+      thingType: "switch_panel",
+      spaceId: "living",
+      entityId: "number.living_countdown",
+      entityName: "倒计时",
+      kind: "config",
+      valueType: "number",
+      reason: "配置项禁止由 AI 自动修改",
+      suggestedRisk: "high",
+      confirmation: "always",
+      autoExecutable: false,
+    });
+    const overlay = setBindingReviewDecision(createHcmOverlay(), {
+      providerId: "home_assistant",
+      entityId: "number.living_countdown",
+      action: BINDING_REVIEW_DECISIONS.ALLOW_AUTO,
+    });
+
+    const next = applyHcmOverlay(home, overlay);
+    const countdown = next.things[0].capabilities.find((capability) => capability.id === "countdown");
+
+    expect(countdown.policy).toMatchObject({
+      risk: "high",
+      confirmation: "always",
+      autoExecutable: false,
+      overlayDecision: "default_block",
+      overlaySource: "hard_protection",
+    });
+    expect(next.stats.autoExecutableCapabilities).toBe(1);
+    expect(next.unresolvedBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityId: "number.living_countdown",
+          suggestedRisk: "high",
+        }),
+      ]),
+    );
+  });
+
   it("keeps rebuilt review bindings deduplicated", () => {
     const home = createReviewHome();
     home.things[0].capabilities.push({

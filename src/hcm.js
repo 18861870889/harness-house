@@ -235,7 +235,7 @@ function recommendBindingAdjustment(binding) {
     return { severity: "critical", action: "保持手动确认，单独设置安全场景" };
   }
   if (binding.kind === CAPABILITY_KINDS.CONFIG || binding.valueType === "text" || /密码|password|配置|config|互控|解控|绑定/.test(text)) {
-    return { severity: "high", action: "保持禁止自动执行，必要时隐藏配置项" };
+    return { severity: "high", action: "配置项保持禁止，明确照明通道可保留" };
   }
   if (binding.kind === CAPABILITY_KINDS.SENSOR) {
     return { severity: "high", action: "只作为状态输入，不作为可执行能力" };

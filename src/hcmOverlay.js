@@ -231,7 +231,7 @@ function ensureProvider(overlay, providerId) {
 }
 
 function applyCapabilityOverride(capability, binding, override, defaultOverride) {
-  const selectedOverride = selectEffectiveOverride(binding, override, defaultOverride);
+  const selectedOverride = createHardProtectionOverride(capability, binding) ?? selectEffectiveOverride(binding, override, defaultOverride);
   if (!selectedOverride?.policy) return capability;
   return {
     ...capability,
@@ -242,6 +242,16 @@ function applyCapabilityOverride(capability, binding, override, defaultOverride)
       overlayUpdatedAt: selectedOverride.updatedAt,
       overlaySource: selectedOverride.source,
     },
+  };
+}
+
+function createHardProtectionOverride(capability, binding) {
+  if (!requiresCapabilityHardProtection(capability, binding)) return null;
+  return {
+    entityId: capability.binding?.entityId ?? binding?.entityId,
+    decision: `default_${BINDING_REVIEW_DECISIONS.BLOCK}`,
+    policy: DEFAULT_DECISION_POLICIES[BINDING_REVIEW_DECISIONS.BLOCK],
+    source: "hard_protection",
   };
 }
 
@@ -337,6 +347,17 @@ function requiresHardProtection(binding) {
   if (binding.kind === CAPABILITY_KINDS.SENSOR) return true;
   if (binding.kind === CAPABILITY_KINDS.CONFIG) return true;
   if (binding.valueType === "text") return true;
+  return /密码|password|燃气|gas|热水器|摄像|监控|camera|配置|config|互控|解控|绑定|物理控制锁|童锁/.test(text);
+}
+
+function requiresCapabilityHardProtection(capability, binding) {
+  const domain = capability.binding?.domain;
+  const text = `${binding?.thingName ?? ""} ${binding?.entityName ?? ""} ${binding?.reason ?? ""} ${binding?.thingType ?? ""} ${capability.name ?? ""}`
+    .toLowerCase();
+  if (capability.kind === CAPABILITY_KINDS.CONFIG) return true;
+  if (["number", "select", "text"].includes(domain)) return true;
+  if (capability.valueType === "text") return true;
+  if (capability.policy?.risk === POLICY_LEVELS.SENSITIVE || binding?.suggestedRisk === POLICY_LEVELS.SENSITIVE) return true;
   return /密码|password|燃气|gas|热水器|摄像|监控|camera|配置|config|互控|解控|绑定|物理控制锁|童锁/.test(text);
 }
 
