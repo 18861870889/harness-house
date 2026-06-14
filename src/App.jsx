@@ -25,7 +25,6 @@ import {
   applyDefaultRunPolicy,
   getHcmHome,
   runHcmCommand,
-  updateHcmBindingOverride,
   updateHcmThingOverride,
 } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
@@ -140,27 +139,6 @@ export default function App() {
   useEffect(() => {
     refreshHcmHome();
   }, [refreshHcmHome]);
-
-  const updateBindingReview = useCallback(
-    async (binding, action) => {
-      if (!binding?.entityId || reviewActionId) return;
-      setReviewActionId(`${binding.id}:${action}`);
-      setHcmStatus({ state: "loading", error: null });
-      try {
-        await updateHcmBindingOverride({
-          providerId: hcmHome?.provider?.id,
-          entityId: binding.entityId,
-          action,
-        });
-        await refreshHcmHome();
-      } catch (error) {
-        setHcmStatus({ state: "error", error: error.message });
-      } finally {
-        setReviewActionId(null);
-      }
-    },
-    [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
-  );
 
   const applyDefaultRun = useCallback(async () => {
     if (reviewActionId) return;
@@ -444,7 +422,6 @@ export default function App() {
           home={hcmHome}
           status={hcmStatus}
           onRefresh={refreshHcmHome}
-          onReviewAction={updateBindingReview}
           onApplyDefaultRun={applyDefaultRun}
           onHideThing={hideHcmThing}
           reviewActionId={reviewActionId}
@@ -565,7 +542,6 @@ function HcmCatalog({
   home,
   status,
   onRefresh,
-  onReviewAction,
   onApplyDefaultRun,
   onHideThing,
   reviewActionId,
@@ -617,7 +593,7 @@ function HcmCatalog({
             <Metric label="真实设备" value={`${home.stats.thingCount}`} />
             <Metric label="能力" value={`${home.stats.capabilityCount}`} />
             <Metric label="可自动执行" value={`${home.stats.autoExecutableCapabilities}`} />
-            <Metric label="待确认绑定" value={`${home.stats.unresolvedBindingCount}`} tone="danger" />
+            <Metric label="受保护能力" value={`${home.stats.unresolvedBindingCount}`} tone="danger" />
           </div>
           <div className="hcm-area-strip">
             {areaCounts.slice(0, 6).map(([area, count]) => (
@@ -640,7 +616,6 @@ function HcmCatalog({
           )}
           <BindingReview
             review={home.review}
-            onAction={onReviewAction}
             onHideThing={onHideThing}
             actionId={reviewActionId}
           />
@@ -666,23 +641,28 @@ function executableCapabilityCount(thing) {
     .length;
 }
 
-function BindingReview({ review, onAction, onHideThing, actionId }) {
+function BindingReview({ review, onHideThing, actionId }) {
   if (!review || review.total === 0) return null;
-  const riskItems = Object.entries(review.byRisk ?? {}).sort(([, first], [, second]) => second - first);
-  const samples = review.samples ?? [];
+  const recommendations = review.recommendations ?? { totalDevices: 0, bySeverity: {}, devices: [] };
+  const severityItems = Object.entries(recommendations.bySeverity ?? {}).sort(
+    ([first], [second]) => severityRank(second) - severityRank(first),
+  );
 
   return (
     <div className="binding-review">
       <div className="review-header">
         <span>Review Queue</span>
-        <strong>{review.total}</strong>
+        <strong>{recommendations.totalDevices}</strong>
       </div>
       <div className="review-risk-strip">
-        {riskItems.map(([risk, count]) => (
-          <span className={`risk-chip risk-${risk}`} key={risk}>
-            {risk} <strong>{count}</strong>
+        {severityItems.map(([severity, count]) => (
+          <span className={`risk-chip severity-${severity}`} key={severity}>
+            {severity} <strong>{count}</strong>
           </span>
         ))}
+        <span className="risk-chip protected-total">
+          protected <strong>{review.total}</strong>
+        </span>
       </div>
       <div className="review-reasons">
         {(review.topReasons ?? []).slice(0, 3).map((item) => (
@@ -692,47 +672,16 @@ function BindingReview({ review, onAction, onHideThing, actionId }) {
           </div>
         ))}
       </div>
-      <AdjustmentRecommendations recommendations={review.recommendations} onHideThing={onHideThing} actionId={actionId} />
-      <div className="review-samples">
-        {samples.slice(0, 3).map((item) => (
-          <div className={`review-sample risk-${item.suggestedRisk}`} key={item.id}>
-            <span>{item.thingName}</span>
-            <strong>{item.entityName}</strong>
-            <small>{item.reason}</small>
-            <div className="review-actions">
-              <button
-                type="button"
-                title="允许 AI 自动执行"
-                disabled={Boolean(actionId)}
-                onClick={() => onAction(item, "allow_auto")}
-              >
-                <Check size={12} />
-                允许
-              </button>
-              <button
-                type="button"
-                title="执行前必须确认"
-                disabled={Boolean(actionId)}
-                onClick={() => onAction(item, "require_confirmation")}
-              >
-                <ShieldCheck size={12} />
-                确认
-              </button>
-              <button
-                type="button"
-                title="禁止 AI 自动执行"
-                disabled={Boolean(actionId)}
-                onClick={() => onAction(item, "block")}
-              >
-                <X size={12} />
-                禁止
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AdjustmentRecommendations recommendations={recommendations} onHideThing={onHideThing} actionId={actionId} />
     </div>
   );
+}
+
+function severityRank(severity) {
+  if (severity === "critical") return 3;
+  if (severity === "high") return 2;
+  if (severity === "medium") return 1;
+  return 0;
 }
 
 function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {

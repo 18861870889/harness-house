@@ -719,15 +719,22 @@ button {
   background: rgba(15, 23, 42, 0.55);
 }
 
-.risk-chip.risk-medium {
+.risk-chip.risk-medium,
+.risk-chip.severity-medium {
   color: var(--amber);
   border-color: rgba(251, 191, 36, 0.3);
 }
 
 .risk-chip.risk-high,
-.risk-chip.risk-sensitive {
+.risk-chip.risk-sensitive,
+.risk-chip.severity-high,
+.risk-chip.severity-critical {
   color: var(--red);
   border-color: rgba(248, 113, 113, 0.3);
+}
+
+.risk-chip.protected-total {
+  color: var(--muted);
 }
 
 .review-reasons,
