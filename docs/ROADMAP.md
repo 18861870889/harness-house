@@ -381,6 +381,27 @@ switch.xiaomi_123
 - Preference conflict tests。
 - Safety regression tests。
 
+### v0.6.1 - HA Service Simulation & Debug Safety
+
+目标：
+
+把真实 HA 调试从“直接试设备”改成“读取真实接口，模拟 service 调用”，避免自动化测试误操作家庭设备。
+
+新增能力：
+
+- `HomeAssistantServiceSimulator`：基于当前 HA states、entity registry、device registry、supported_features 模拟 service 调用。
+- HCM executor 的 service 选择优先参考 HA entity 能力，不只看 domain。
+- `/api/hcm/command` 的调试默认使用 dry-run。
+- 自动化调试禁止默认下发真实 `/api/services/*`。
+- 只有用户明确授权时，才允许真实控制 HA 设备。
+
+验收：
+
+- `media_player` 的 pause/stop/play/turn_off 能根据 supported_features 做选择。
+- 常见 domain 的 service 映射有 mock 覆盖。
+- 自动化回归测试不依赖真实设备状态变化。
+- 真实设备控制测试需要单独标记并人工确认。
+
 ### v0.7 - Multi-Agent Runtime
 
 目标：
