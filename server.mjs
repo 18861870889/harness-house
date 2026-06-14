@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
 import {
@@ -16,11 +16,15 @@ import {
   compileHcmForPlanner,
   normalizeHcmPlannerDraft,
 } from "./src/hcmPlanner.js";
+import { createCommandTrace, finishCommandTrace, runCommandStage } from "./src/commandRuntime.js";
+import { createLearningMemory, recordLearningObservation, summarizeLearningMemory } from "./src/learningLayer.js";
 
 const app = express();
 loadLocalEnv();
 const port = getCliPort() ?? Number(process.env.PORT ?? 5173);
 const hcmOverlayPath = resolve(process.cwd(), process.env.HARNESS_HCM_OVERLAY_PATH || "data/home-model-overlay.local.json");
+const commandAuditPath = resolve(process.cwd(), process.env.HARNESS_COMMAND_AUDIT_PATH || "data/command-audit.local.jsonl");
+const learningMemoryPath = resolve(process.cwd(), process.env.HARNESS_LEARNING_MEMORY_PATH || "data/learning-memory.local.json");
 const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
@@ -188,29 +192,61 @@ app.post("/api/hcm/command", async (request, response) => {
     return;
   }
 
-  const startedAt = Date.now();
+  const trace = createCommandTrace({
+    input: request.body?.input,
+    path: "hcm-real",
+    dryRun: Boolean(request.body?.dryRun),
+  });
   try {
     const payload = request.body ?? {};
     validateHcmCommandRequest(payload);
-    const rawHome = await homeAssistantAdapter.discoverHcmHome();
-    const home = applyHcmOverlay(rawHome, readHcmOverlay());
-    const plannerDevices = compileHcmForPlanner(home, {
-      currentRoomId: payload.currentRoomId,
-      selectedRoomId: payload.selectedRoomId,
+    const rawHome = await runCommandStage(trace, "context_snapshot", () => homeAssistantAdapter.discoverHcmHome(), {
+      summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
     });
+    const home = await runCommandStage(trace, "policy_overlay", async () => applyHcmOverlay(rawHome, readHcmOverlay()), {
+      summarize: (home) => ({
+        autoExecutable: home.stats.autoExecutableCapabilities,
+        protected: home.stats.unresolvedBindingCount,
+      }),
+    });
+    const plannerDevices = await runCommandStage(
+      trace,
+      "prompt_compile",
+      async () =>
+        compileHcmForPlanner(home, {
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+        }),
+      {
+        summarize: (devices) => ({
+          devices: devices.length,
+          capabilities: devices.reduce((sum, device) => sum + device.capabilities.length, 0),
+        }),
+      },
+    );
     if (plannerDevices.length === 0) {
       response.status(409).json({ error: "No auto-executable HCM capabilities are available." });
       return;
     }
 
-    const draft = await callHcmPlannerModel({
-      input: payload.input,
-      currentRoomId: payload.currentRoomId,
-      selectedRoomId: payload.selectedRoomId,
-      devices: plannerDevices,
+    const draft = await runCommandStage(
+      trace,
+      "llm_planner",
+      () =>
+        callHcmPlannerModel({
+          input: payload.input,
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+          devices: plannerDevices,
+        }),
+      { summarize: (draft) => ({ intent: draft.intent, actionCount: draft.actions?.length ?? 0 }) },
+    );
+    const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
+      summarize: (plan) => ({ intent: plan.intent, actionCount: plan.actions.length, needsConfirmation: plan.needsConfirmation }),
     });
-    const plan = normalizeHcmPlannerDraft(payload.input, draft, home);
-    const executionPlan = buildHcmExecutionPlan(plan.actions, home);
+    const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
+      summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
+    });
     const execution = {
       status: "planned",
       dryRun: Boolean(payload.dryRun),
@@ -229,14 +265,32 @@ app.post("/api/hcm/command", async (request, response) => {
       execution.status = "dry_run";
     } else {
       execution.status = "executing";
-      execution.results = await executeHcmServiceCalls(executionPlan.accepted);
+      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(executionPlan.accepted), {
+        summarize: (results) => ({
+          ok: results.filter((result) => result.ok).length,
+          failed: results.filter((result) => !result.ok).length,
+        }),
+      });
       execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
     }
 
-    response.json({
-      commandId: crypto.randomUUID(),
+    const auditEntry = finishCommandTrace(trace, {
       status: execution.status,
-      latencyMs: Date.now() - startedAt,
+      plan,
+      execution,
+      model: getModel(),
+      planner: {
+        deviceCount: plannerDevices.length,
+        capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
+      },
+    });
+    writeCommandAuditEntry(auditEntry);
+    updateLearningMemory(auditEntry);
+
+    response.json({
+      commandId: trace.commandId,
+      status: execution.status,
+      latencyMs: auditEntry.latencyMs,
       model: getModel(),
       plan,
       execution,
@@ -244,12 +298,26 @@ app.post("/api/hcm/command", async (request, response) => {
         deviceCount: plannerDevices.length,
         capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
       },
+      trace: auditEntry,
     });
   } catch (error) {
+    const auditEntry = finishCommandTrace(trace, { status: "error" });
+    writeCommandAuditEntry({ ...auditEntry, error: error.message });
     response.status(error.statusCode || 502).json({
       error: error.message || "HCM command failed",
     });
   }
+});
+
+app.get("/api/commands/audit", (request, response) => {
+  const limit = Math.max(1, Math.min(100, Number(request.query.limit ?? 20)));
+  response.json({
+    entries: readCommandAuditEntries(limit),
+  });
+});
+
+app.get("/api/learning/memory", (_request, response) => {
+  response.json(summarizeLearningMemory(readLearningMemory()));
 });
 
 app.post("/api/adapters/home-assistant/actions", async (request, response) => {
@@ -400,6 +468,41 @@ function readHcmOverlay() {
 function writeHcmOverlay(overlay) {
   mkdirSync(dirname(hcmOverlayPath), { recursive: true });
   writeFileSync(hcmOverlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
+}
+
+function writeCommandAuditEntry(entry) {
+  mkdirSync(dirname(commandAuditPath), { recursive: true });
+  appendFileSync(commandAuditPath, `${JSON.stringify(entry)}\n`);
+}
+
+function readCommandAuditEntries(limit = 20) {
+  if (!existsSync(commandAuditPath)) return [];
+  return readFileSync(commandAuditPath, "utf8")
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-limit)
+    .reverse()
+    .map((line) => JSON.parse(line));
+}
+
+function readLearningMemory() {
+  if (!existsSync(learningMemoryPath)) return createLearningMemory();
+  try {
+    return JSON.parse(readFileSync(learningMemoryPath, "utf8"));
+  } catch (error) {
+    throw new Error(`Learning memory file is invalid JSON: ${error.message}`);
+  }
+}
+
+function writeLearningMemory(memory) {
+  mkdirSync(dirname(learningMemoryPath), { recursive: true });
+  writeFileSync(learningMemoryPath, `${JSON.stringify(memory, null, 2)}\n`);
+}
+
+function updateLearningMemory(auditEntry) {
+  const memory = recordLearningObservation(readLearningMemory(), auditEntry);
+  writeLearningMemory(memory);
 }
 
 function badRequest(message) {

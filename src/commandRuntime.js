@@ -1,0 +1,121 @@
+export function createCommandTrace({ input, path = "hcm-real", dryRun = false, now = () => Date.now() } = {}) {
+  const startedAt = now();
+  return {
+    commandId: crypto.randomUUID(),
+    input,
+    path,
+    dryRun,
+    startedAt,
+    stages: [],
+    status: "running",
+  };
+}
+
+export async function runCommandStage(trace, name, fn, { now = () => Date.now(), summarize = defaultSummary } = {}) {
+  const startedAt = now();
+  try {
+    const result = await fn();
+    trace.stages.push({
+      name,
+      latencyMs: Math.max(0, now() - startedAt),
+      status: "ok",
+      summary: summarize(result),
+    });
+    return result;
+  } catch (error) {
+    trace.stages.push({
+      name,
+      latencyMs: Math.max(0, now() - startedAt),
+      status: "error",
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
+export function finishCommandTrace(trace, { status, plan, execution, model, planner } = {}, now = () => Date.now()) {
+  const finishedAt = now();
+  const safety = summarizeSafety(plan, execution);
+  const entry = {
+    commandId: trace.commandId,
+    input: trace.input,
+    path: trace.path,
+    dryRun: trace.dryRun,
+    status,
+    model,
+    latencyMs: Math.max(0, finishedAt - trace.startedAt),
+    startedAt: new Date(trace.startedAt).toISOString(),
+    finishedAt: new Date(finishedAt).toISOString(),
+    stages: trace.stages,
+    planner,
+    plan: summarizePlan(plan),
+    execution: summarizeExecution(execution),
+    safety,
+  };
+  trace.status = status;
+  return entry;
+}
+
+export function summarizeSafety(plan, execution) {
+  const accepted = execution?.accepted ?? [];
+  const rejected = execution?.rejected ?? [];
+  const highestRisk = accepted.reduce((risk, item) => higherRisk(risk, item.risk || "low"), "low");
+  return {
+    level: highestRisk,
+    confirmationRequired: Boolean(plan?.needsConfirmation),
+    rejectedCount: rejected.length,
+    executableCount: accepted.length,
+    dryRun: Boolean(execution?.dryRun),
+  };
+}
+
+function summarizePlan(plan) {
+  if (!plan) return null;
+  return {
+    id: plan.id,
+    kind: plan.kind,
+    intent: plan.intent,
+    confidence: plan.confidence,
+    summary: plan.summary,
+    actionCount: plan.actions?.length ?? plan.steps?.length ?? 0,
+    rejected: plan.rejected ?? [],
+  };
+}
+
+function summarizeExecution(execution) {
+  if (!execution) return null;
+  return {
+    status: execution.status,
+    acceptedCount: execution.accepted?.length ?? 0,
+    rejectedCount: execution.rejected?.length ?? 0,
+    resultCount: execution.results?.length ?? 0,
+    services: (execution.accepted ?? []).map((item) => ({
+      thingId: item.thingId,
+      thingName: item.thingName,
+      capabilityId: item.capabilityId,
+      capabilityName: item.capabilityName,
+      service: item.service,
+    })),
+  };
+}
+
+function higherRisk(first, second) {
+  return riskRank(second) > riskRank(first) ? second : first;
+}
+
+function riskRank(risk) {
+  if (risk === "sensitive") return 4;
+  if (risk === "high") return 3;
+  if (risk === "medium") return 2;
+  if (risk === "low") return 1;
+  return 0;
+}
+
+function defaultSummary(result) {
+  if (Array.isArray(result)) return { count: result.length };
+  if (!result || typeof result !== "object") return {};
+  if ("stats" in result) return { stats: result.stats };
+  if ("actions" in result) return { actionCount: result.actions.length, summary: result.summary };
+  if ("accepted" in result) return { accepted: result.accepted.length, rejected: result.rejected.length };
+  return {};
+}

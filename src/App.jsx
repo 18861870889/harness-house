@@ -23,7 +23,9 @@ import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
 import {
   applyDefaultRunPolicy,
+  getCommandAudit,
   getHcmHome,
+  getLearningMemory,
   runHcmCommand,
   updateHcmThingOverride,
 } from "./hcmClient.js";
@@ -95,6 +97,8 @@ export default function App() {
   });
   const [reviewActionId, setReviewActionId] = useState(null);
   const [defaultRunSummary, setDefaultRunSummary] = useState(null);
+  const [commandAudit, setCommandAudit] = useState([]);
+  const [learningMemory, setLearningMemory] = useState(null);
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -139,6 +143,21 @@ export default function App() {
   useEffect(() => {
     refreshHcmHome();
   }, [refreshHcmHome]);
+
+  const refreshIntelligence = useCallback(async () => {
+    try {
+      const [audit, memory] = await Promise.all([getCommandAudit({ limit: 8 }), getLearningMemory()]);
+      setCommandAudit(audit.entries ?? []);
+      setLearningMemory(memory);
+    } catch {
+      setCommandAudit([]);
+      setLearningMemory(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshIntelligence();
+  }, [refreshIntelligence]);
 
   const applyDefaultRun = useCallback(async () => {
     if (reviewActionId) return;
@@ -328,6 +347,7 @@ export default function App() {
       }),
     ]);
     refreshHcmHome();
+    refreshIntelligence();
   }
 
   function applyPlan(plan, latency = 0) {
@@ -442,6 +462,7 @@ export default function App() {
         />
         <PendingPlan plan={pendingPlan} onConfirm={confirmPending} onCancel={cancelPending} />
         <PlanPreview plan={lastPlan} />
+        <IntelligencePanel audit={commandAudit} memory={learningMemory} onRefresh={refreshIntelligence} />
         <SensorSimulator devices={devices} onToggle={toggleDeviceSensor} />
         <AuditLog logs={logs} />
       </aside>
@@ -886,6 +907,49 @@ function PlanPreview({ plan }) {
             </div>
           ))
         )}
+      </div>
+    </section>
+  );
+}
+
+function IntelligencePanel({ audit, memory, onRefresh }) {
+  const candidates = memory?.topCandidates ?? [];
+  return (
+    <section className="panel intelligence-panel">
+      <div className="panel-title">
+        <Bot size={17} />
+        <h2>Learning</h2>
+        <button className="mini-icon-button" type="button" onClick={onRefresh} title="刷新审计和学习摘要">
+          <RefreshCw size={13} />
+        </button>
+      </div>
+      <div className="learning-metrics">
+        <Metric label="审计" value={`${audit.length}`} />
+        <Metric label="候选" value={`${memory?.candidateCount ?? 0}`} />
+      </div>
+      <div className="learning-list">
+        {candidates.length === 0 ? (
+          <div className="learning-empty">Shadow mode</div>
+        ) : (
+          candidates.slice(0, 3).map((candidate) => (
+            <div className="learning-candidate" key={candidate.id}>
+              <span>{candidate.type}</span>
+              <strong>{candidate.input}</strong>
+              <small>
+                {candidate.count}x · {Math.round(candidate.confidence * 100)}%
+              </small>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="audit-mini-list">
+        {audit.slice(0, 3).map((entry) => (
+          <div className={`audit-mini-item ${entry.status}`} key={entry.commandId}>
+            <span>{entry.status}</span>
+            <strong>{entry.input}</strong>
+            <small>{entry.latencyMs}ms</small>
+          </div>
+        ))}
       </div>
     </section>
   );

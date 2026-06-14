@@ -63,3 +63,23 @@ export async function updateHcmThingOverride({ providerId, thingId, patch }) {
   }
   return payload;
 }
+
+export async function getCommandAudit({ limit = 8 } = {}) {
+  const response = await fetch(`/api/commands/audit?limit=${encodeURIComponent(limit)}`);
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Command audit request failed ${response.status}`);
+  }
+  return payload;
+}
+
+export async function getLearningMemory() {
+  const response = await fetch("/api/learning/memory");
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Learning memory request failed ${response.status}`);
+  }
+  return payload;
+}

@@ -291,6 +291,8 @@ switch.xiaomi_123
 
 ### v0.5 - Production-grade Command Pipeline
 
+状态：已完成 alpha。
+
 目标：
 
 把现在的命令执行链路拆成可测试、可观测的后端 pipeline。
@@ -330,6 +332,8 @@ switch.xiaomi_123
 - 每次 LLM 调用可以在本地 audit 中看到请求摘要和响应摘要。
 - 失败可解释。
 - 2 秒 SLA 可以被自动测试。
+- `/api/hcm/command` 返回结构化 trace，包含 context、prompt compile、LLM、safety、executor 阶段。
+- `/api/commands/audit` 可读取本地最近命令审计。
 
 测试要求：
 
@@ -339,6 +343,8 @@ switch.xiaomi_123
 - Audit log snapshot tests。
 
 ### v0.6 - Learning Layer Alpha
+
+状态：已完成 alpha。
 
 目标：
 
@@ -365,6 +371,8 @@ switch.xiaomi_123
 - 用户可以查看、禁用、删除学习规则。
 - 新规则上线前有 shadow mode。
 - 学习不会影响高风险设备确认策略。
+- `/api/learning/memory` 展示 shadow-mode 学习候选。
+- UI 展示最近审计和学习候选，但不会自动写入 overlay。
 
 测试要求：
 
