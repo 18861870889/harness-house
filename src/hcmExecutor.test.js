@@ -87,7 +87,7 @@ describe("hcm executor", () => {
     });
   });
 
-  it("maps media player stop intent to media_stop instead of turn_off", () => {
+  it("maps media player stop intent to pause instead of power off", () => {
     const result = validateHcmAction(
       { thingId: "ha_speaker", capabilityId: "speaker", value: false },
       createExecutorHome(),
@@ -97,7 +97,7 @@ describe("hcm executor", () => {
       ok: true,
       serviceCall: {
         domain: "media_player",
-        service: "media_stop",
+        service: "media_pause",
         serviceData: { entity_id: "media_player.xiaoai" },
       },
     });
