@@ -22,6 +22,7 @@ import {
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
+import { answerHcmStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
 import {
   applyDefaultRunPolicy,
   deleteLearningCandidate,
@@ -318,6 +319,61 @@ export default function App() {
     setPendingPlan(null);
     setMessages((current) => [...current, makeMessage("user", command)]);
     setProcessing(true);
+
+    if (looksLikeStateQuery(command) && hcmHome) {
+      try {
+        const latestHome = await getHcmHome();
+        setHcmHome(latestHome);
+        const answer = answerHcmStateQuery(command, latestHome);
+        if (answer) {
+          const latency = 120;
+          setLastPlan({
+            id: crypto.randomUUID(),
+            kind: "state_query",
+            path: answer.path,
+            intent: "query_device_state",
+            confidence: 0.95,
+            summary: answer.summary,
+            steps: [],
+            commandResult: {
+              commandId: crypto.randomUUID(),
+              status: "answered",
+              path: answer.path,
+              latencyMs: latency,
+              stages: [{ name: "hcm_state_query", latencyMs: latency, mode: "read_only" }],
+            },
+          });
+          setMessages((current) => [
+            ...current,
+            makeMessage("assistant", answer.summary, {
+              path: answer.path,
+              latency,
+            }),
+          ]);
+          setLogs((current) => [
+            {
+              id: crypto.randomUUID(),
+              time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+              level: "info",
+              text: `读取状态：${answer.thingName}`,
+            },
+            ...current,
+          ]);
+          setProcessing(false);
+          return;
+        }
+      } catch (error) {
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "info",
+            text: `HCM 状态读取失败，继续走本地链路：${error.message}`,
+          },
+          ...current,
+        ]);
+      }
+    }
 
     if (canUseRealHcmCommand(hcmHome, llmStatus)) {
       try {

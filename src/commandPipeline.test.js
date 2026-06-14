@@ -38,6 +38,27 @@ describe("command pipeline", () => {
     ]);
   });
 
+  it("answers specific sensor state questions instead of whole-home summaries", async () => {
+    const result = await planCommand({
+      input: "玄关人体目前是什么状态",
+      devices: initialDevices,
+      currentRoomId: "study",
+      selectedRoomId: "study",
+      llmStatus: { configured: true },
+      requestRealPlan: async () => {
+        throw new Error("should not call llm");
+      },
+      wait: noWait,
+      clock,
+    });
+
+    expect(result.plan).toMatchObject({
+      path: "fast",
+      intent: "query_device_state",
+      summary: "玄关人体传感器：检测到有人。",
+    });
+  });
+
   it("uses real LLM when local route is llm-sim and model is configured", async () => {
     const result = await planCommand({
       input: "准备看电影",

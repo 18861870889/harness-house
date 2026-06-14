@@ -496,6 +496,9 @@ export function parseCommand(input, devices, context = {}) {
     };
   }
 
+  const deviceStateQuery = parseDeviceStateQuery(input, text, devices, currentRoomId);
+  if (deviceStateQuery) return deviceStateQuery;
+
   if (/状态|全屋|设备|现在/.test(text)) {
     return createPlan({
       input,
@@ -556,6 +559,50 @@ export function parseCommand(input, devices, context = {}) {
   if (direct) return direct;
 
   return buildSimulatedLlmPlan(input, devices, currentRoomId);
+}
+
+function parseDeviceStateQuery(input, text, devices, currentRoomId) {
+  if (!/状态|目前|现在|当前|有没有|是否|在不在|开着|关着|几度|温度|亮度|电量|光照/.test(text)) return null;
+  if (/全屋|所有|设备/.test(text)) return null;
+
+  const explicitRoomId = detectExplicitRoom(text);
+  const roomId = explicitRoomId ?? detectRoom(text, currentRoomId);
+  const typeMatches = [
+    ["motion_sensor", /人体|移动/],
+    ["presence_sensor", /人在|有人|无人|存在/],
+    ["door_sensor", /门窗|门磁|门/],
+    ["light", /灯|照明/],
+    ["ac", /空调|温度/],
+    ["fan", /风扇/],
+    ["curtain", /窗帘/],
+    ["tv", /电视/],
+    ["camera", /监控|摄像/],
+  ];
+  const matchedType = typeMatches.find(([, pattern]) => pattern.test(text))?.[0];
+  if (!matchedType) return null;
+
+  const device = findDevice(devices, roomId, matchedType);
+  if (!device) {
+    return createPlan({
+      input,
+      path: "fast",
+      intent: "query_device_state",
+      confidence: 0.9,
+      devices,
+      steps: [],
+      summary: `${getRoomName(roomId)}没有找到${deviceTypeNames[matchedType]}。`,
+    });
+  }
+
+  return createPlan({
+    input,
+    path: "fast",
+    intent: "query_device_state",
+    confidence: 0.98,
+    devices,
+    steps: [],
+    summary: `${device.name}：${deviceStateLabel(device)}。`,
+  });
 }
 
 function parseDirectControl(input, text, devices, currentRoomId) {
@@ -888,6 +935,20 @@ export function summarizeHome(devices) {
   return `当前 ${lightsOn} 盏灯开启，${acOn} 台空调开启，${fansOn} 台风扇开启；人在区域：${
     sensors.map((item) => getRoomName(item.roomId)).join("、") || "未检测到"
   }；入户门${doorOpen}。`;
+}
+
+function deviceStateLabel(device) {
+  if (device.type === "motion_sensor" || device.type === "presence_sensor") {
+    return device.detected ? "检测到有人" : "未检测到有人";
+  }
+  if (device.type === "door_sensor") return device.open ? "开启" : "关闭";
+  if (device.type === "light") return device.on ? `开启，亮度 ${device.brightness}%` : "关闭";
+  if (device.type === "ac") return device.on ? `开启，${device.temperature}°C` : "关闭";
+  if (device.type === "fan") return device.on ? `开启，${device.speed || 1}档` : "关闭";
+  if (device.type === "curtain") return `${device.position}%`;
+  if (device.type === "tv") return device.on ? "开启" : "关闭";
+  if (device.type === "camera") return device.privacyMode ? "隐私模式" : device.on ? "开启" : "关闭";
+  return "待机";
 }
 
 export function inferCurrentRoom(devices) {
