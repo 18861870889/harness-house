@@ -6,6 +6,7 @@ import {
   applyHcmOverlay,
   createHcmOverlay,
   setBindingReviewDecision,
+  setThingOverride,
   summarizeOverlay,
 } from "./hcmOverlay.js";
 
@@ -240,5 +241,18 @@ describe("hcm overlay", () => {
       protected: 0,
     });
     expect(home.overlay.bindingOverrideCount).toBe(0);
+  });
+
+  it("can hide a thing from the HCM overlay", () => {
+    const overlay = setThingOverride(createHcmOverlay(), {
+      providerId: "home_assistant",
+      thingId: "ha_switch",
+      patch: { disabled: true },
+    });
+
+    const home = applyHcmOverlay(createReviewHome(), overlay);
+
+    expect(home.things).toHaveLength(0);
+    expect(home.overlay.disabledThingCount).toBe(1);
   });
 });

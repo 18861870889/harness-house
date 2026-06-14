@@ -21,7 +21,13 @@ import {
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
-import { applyDefaultRunPolicy, getHcmHome, updateHcmBindingOverride } from "./hcmClient.js";
+import {
+  applyDefaultRunPolicy,
+  getHcmHome,
+  runHcmCommand,
+  updateHcmBindingOverride,
+  updateHcmThingOverride,
+} from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
@@ -54,6 +60,14 @@ function latencyClass(latency) {
   if (latency < 800) return "good";
   if (latency < 2000) return "ok";
   return "slow";
+}
+
+function canUseRealHcmCommand(home, llmStatus) {
+  return Boolean(
+    home?.stats?.autoExecutableCapabilities > 0 &&
+      llmStatus?.configured &&
+      llmStatus?.mode === "real",
+  );
 }
 
 export default function App() {
@@ -164,6 +178,27 @@ export default function App() {
     }
   }, [hcmHome?.provider?.id, reviewActionId]);
 
+  const hideHcmThing = useCallback(
+    async (thingId) => {
+      if (!thingId || reviewActionId) return;
+      setReviewActionId(`hide:${thingId}`);
+      setHcmStatus({ state: "loading", error: null });
+      try {
+        await updateHcmThingOverride({
+          providerId: hcmHome?.provider?.id,
+          thingId,
+          patch: { disabled: true },
+        });
+        await refreshHcmHome();
+      } catch (error) {
+        setHcmStatus({ state: "error", error: error.message });
+      } finally {
+        setReviewActionId(null);
+      }
+    },
+    [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
+  );
+
   async function submitCommand(raw = input) {
     const command = raw.trim();
     if (!command || processing) return;
@@ -172,6 +207,31 @@ export default function App() {
     setPendingPlan(null);
     setMessages((current) => [...current, makeMessage("user", command)]);
     setProcessing(true);
+
+    if (canUseRealHcmCommand(hcmHome, llmStatus)) {
+      try {
+        const realResult = await runHcmCommand({
+          input: command,
+          currentRoomId,
+          selectedRoomId,
+        });
+        if (realResult.plan?.actions?.length > 0 || ["executed", "partial_failure", "rejected"].includes(realResult.status)) {
+          handleRealCommandResult(realResult);
+          setProcessing(false);
+          return;
+        }
+      } catch (error) {
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "info",
+            text: `真实设备链路未执行，回退本地模拟：${error.message}`,
+          },
+          ...current,
+        ]);
+      }
+    }
 
     const pipeline = await planCommand({
       input: command,
@@ -230,6 +290,66 @@ export default function App() {
 
     applyPlan(plan, latency);
     setProcessing(false);
+  }
+
+  async function handleRealCommandResult(result) {
+    const okCount = result.execution?.results?.filter((item) => item.ok).length ?? 0;
+    const failCount = result.execution?.results?.filter((item) => !item.ok).length ?? 0;
+    const accepted = result.execution?.accepted ?? [];
+    const logText =
+      result.status === "executed"
+        ? `真实设备已执行：${accepted.map((item) => `${item.thingName} ${item.capabilityName}`).join("；")}`
+        : result.status === "partial_failure"
+          ? `真实设备部分执行：成功 ${okCount}，失败 ${failCount}`
+          : result.status === "rejected"
+            ? `真实设备计划被拒绝：${result.execution?.rejected?.map((item) => item.message).join("；")}`
+            : result.plan?.summary ?? "真实设备计划已生成。";
+
+    setLastPlan({
+      id: result.commandId,
+      kind: "real_hcm",
+      path: "hcm-real",
+      intent: result.plan?.intent ?? "real_hcm",
+      confidence: result.plan?.confidence ?? 0.6,
+      summary: result.plan?.summary ?? logText,
+      steps: accepted.map((item) => ({
+        id: `${item.thingId}:${item.capabilityId}`,
+        deviceId: item.thingId,
+        deviceName: item.thingName,
+        capability: item.capabilityName,
+        value: item.value,
+        risk: "low",
+        reason: item.service,
+      })),
+      commandResult: {
+        commandId: result.commandId,
+        status: result.status,
+        path: "hcm-real",
+        latencyMs: result.latencyMs,
+        stages: [
+          { name: "hcm_planner", latencyMs: result.latencyMs, mode: "real" },
+          { name: "ha_executor", latencyMs: 0, status: result.status },
+        ],
+      },
+    });
+    setLogs((current) => [
+      {
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: result.status === "executed" ? "success" : "info",
+        text: logText,
+      },
+      ...current,
+    ]);
+    setMessages((current) => [
+      ...current,
+      makeMessage("assistant", logText, {
+        path: "hcm-real",
+        latency: result.latencyMs,
+        planId: result.commandId,
+      }),
+    ]);
+    refreshHcmHome();
   }
 
   function applyPlan(plan, latency = 0) {
@@ -326,6 +446,7 @@ export default function App() {
           onRefresh={refreshHcmHome}
           onReviewAction={updateBindingReview}
           onApplyDefaultRun={applyDefaultRun}
+          onHideThing={hideHcmThing}
           reviewActionId={reviewActionId}
           defaultRunSummary={defaultRunSummary}
         />
@@ -446,6 +567,7 @@ function HcmCatalog({
   onRefresh,
   onReviewAction,
   onApplyDefaultRun,
+  onHideThing,
   reviewActionId,
   defaultRunSummary,
 }) {
@@ -507,6 +629,7 @@ function HcmCatalog({
           {home.overlay?.bindingOverrideCount > 0 && (
             <div className="overlay-summary">
               已审核 <strong>{home.overlay.bindingOverrideCount}</strong>
+              {home.overlay.disabledThingCount > 0 && <span>隐藏 {home.overlay.disabledThingCount}</span>}
             </div>
           )}
           {defaultPolicy?.enabled && (
@@ -515,7 +638,12 @@ function HcmCatalog({
               <span>保护 {defaultPolicy.protected}</span>
             </div>
           )}
-          <BindingReview review={home.review} onAction={onReviewAction} actionId={reviewActionId} />
+          <BindingReview
+            review={home.review}
+            onAction={onReviewAction}
+            onHideThing={onHideThing}
+            actionId={reviewActionId}
+          />
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
               <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
@@ -538,7 +666,7 @@ function executableCapabilityCount(thing) {
     .length;
 }
 
-function BindingReview({ review, onAction, actionId }) {
+function BindingReview({ review, onAction, onHideThing, actionId }) {
   if (!review || review.total === 0) return null;
   const riskItems = Object.entries(review.byRisk ?? {}).sort(([, first], [, second]) => second - first);
   const samples = review.samples ?? [];
@@ -564,7 +692,7 @@ function BindingReview({ review, onAction, actionId }) {
           </div>
         ))}
       </div>
-      <AdjustmentRecommendations recommendations={review.recommendations} />
+      <AdjustmentRecommendations recommendations={review.recommendations} onHideThing={onHideThing} actionId={actionId} />
       <div className="review-samples">
         {samples.slice(0, 3).map((item) => (
           <div className={`review-sample risk-${item.suggestedRisk}`} key={item.id}>
@@ -607,7 +735,7 @@ function BindingReview({ review, onAction, actionId }) {
   );
 }
 
-function AdjustmentRecommendations({ recommendations }) {
+function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {
   const devices = recommendations?.devices ?? [];
   if (devices.length === 0) return null;
 
@@ -622,6 +750,15 @@ function AdjustmentRecommendations({ recommendations }) {
           <span>{device.thingName}</span>
           <strong>{device.count}</strong>
           <small>{device.action}</small>
+          <button
+            type="button"
+            disabled={Boolean(actionId)}
+            onClick={() => onHideThing(device.thingId)}
+            title="从 AI 可控家庭模型中隐藏该设备"
+          >
+            <X size={11} />
+            隐藏
+          </button>
         </div>
       ))}
     </div>

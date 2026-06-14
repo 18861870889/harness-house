@@ -71,6 +71,37 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
 
       return executeHomeAssistantAction({ baseUrl: normalizedBaseUrl, token, fetchImpl, action });
     },
+    async executeServiceCall(serviceCall) {
+      if (!normalizedBaseUrl || !token) {
+        throw new Error("Home Assistant adapter is not configured");
+      }
+
+      return executeHomeAssistantServiceCall({ baseUrl: normalizedBaseUrl, token, fetchImpl, serviceCall });
+    },
+  };
+}
+
+export async function executeHomeAssistantServiceCall({ baseUrl, token, fetchImpl = fetch, serviceCall }) {
+  if (!serviceCall?.domain || !serviceCall?.service) throw new Error("Home Assistant service call is required");
+  const response = await fetchImpl(`${baseUrl}/api/services/${serviceCall.domain}/${serviceCall.service}`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(serviceCall.serviceData ?? {}),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Home Assistant service call failed ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  const changedStates = await response.json();
+  return {
+    status: "executed",
+    adapter: HOME_ASSISTANT_ADAPTER_ID,
+    domain: serviceCall.domain,
+    service: serviceCall.service,
+    serviceData: serviceCall.serviceData,
+    changedStates: Array.isArray(changedStates) ? changedStates.map(mapHomeAssistantState).filter(Boolean) : [],
   };
 }
 

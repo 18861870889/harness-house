@@ -68,6 +68,24 @@ export function setBindingReviewDecision(
   return next;
 }
 
+export function setThingOverride(
+  overlay,
+  { providerId = "home_assistant", thingId, patch = {}, updatedAt = new Date().toISOString() } = {},
+) {
+  if (!thingId || typeof thingId !== "string") throw new Error("thingId is required");
+  const next = normalizeOverlay(overlay);
+  const provider = ensureProvider(next, providerId);
+  provider.things[thingId] = {
+    ...provider.things[thingId],
+    ...pickThingOverride(patch),
+    disabled: typeof patch.disabled === "boolean" ? patch.disabled : provider.things[thingId]?.disabled,
+    aliases: mergeAliases(provider.things[thingId]?.aliases, patch.aliases),
+    updatedAt,
+  };
+  next.updatedAt = updatedAt;
+  return next;
+}
+
 export function applyDefaultRunPolicy(
   overlay,
   home,
@@ -118,30 +136,32 @@ export function applyHcmOverlay(home, overlay, { defaultRunPolicy = true } = {})
     protected: 0,
   };
 
-  const things = home.things.map((thing) => {
-    const thingOverride = providerOverlay.things[thing.id];
-    const nextThing = {
-      ...thing,
-      ...pickThingOverride(thingOverride),
-      aliases: mergeAliases(thing.aliases, thingOverride?.aliases),
-      capabilities: thing.capabilities.map((capability) => {
-        const binding = unresolvedByEntity.get(capability.binding?.entityId);
-        return applyCapabilityOverride(
-          capability,
-          binding,
-          providerOverlay.bindings[capability.binding?.entityId],
-          defaultRunPolicy ? createDefaultOverride(binding, defaultPolicy) : null,
-        );
-      }),
-    };
-    nextThing.state = {
-      ...thing.state,
-      autoExecutable: nextThing.capabilities.filter((capability) => isExecutableCapability(capability)).length,
-      controllable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.CONTROL).length,
-      readable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.SENSOR).length,
-    };
-    return nextThing;
-  });
+  const things = home.things
+    .filter((thing) => providerOverlay.things[thing.id]?.disabled !== true)
+    .map((thing) => {
+      const thingOverride = providerOverlay.things[thing.id];
+      const nextThing = {
+        ...thing,
+        ...pickThingOverride(thingOverride),
+        aliases: mergeAliases(thing.aliases, thingOverride?.aliases),
+        capabilities: thing.capabilities.map((capability) => {
+          const binding = unresolvedByEntity.get(capability.binding?.entityId);
+          return applyCapabilityOverride(
+            capability,
+            binding,
+            providerOverlay.bindings[capability.binding?.entityId],
+            defaultRunPolicy ? createDefaultOverride(binding, defaultPolicy) : null,
+          );
+        }),
+      };
+      nextThing.state = {
+        ...thing.state,
+        autoExecutable: nextThing.capabilities.filter((capability) => isExecutableCapability(capability)).length,
+        controllable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.CONTROL).length,
+        readable: nextThing.capabilities.filter((capability) => capability.kind === CAPABILITY_KINDS.SENSOR).length,
+      };
+      return nextThing;
+    });
 
   const nextHome = createHcmHome({
     provider: home.provider,
@@ -177,6 +197,10 @@ export function summarizeOverlay(overlay) {
     updatedAt: normalizedOverlay.updatedAt,
     providerCount: providers.length,
     bindingOverrideCount,
+    disabledThingCount: providers.reduce(
+      (sum, provider) => sum + Object.values(provider.things ?? {}).filter((thing) => thing.disabled).length,
+      0,
+    ),
     decisions,
   };
 }

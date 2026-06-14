@@ -35,3 +35,31 @@ export async function applyDefaultRunPolicy({ providerId } = {}) {
   }
   return payload;
 }
+
+export async function runHcmCommand({ input, currentRoomId, selectedRoomId, dryRun = false }) {
+  const response = await fetch("/api/hcm/command", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input, currentRoomId, selectedRoomId, dryRun }),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `HCM command request failed ${response.status}`);
+  }
+  return payload;
+}
+
+export async function updateHcmThingOverride({ providerId, thingId, patch }) {
+  const response = await fetch("/api/hcm/overrides/things", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ providerId, thingId, patch }),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `HCM thing override request failed ${response.status}`);
+  }
+  return payload;
+}

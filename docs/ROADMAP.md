@@ -243,6 +243,8 @@ Provider Raw Graph
 
 ### v0.4 - Mapping UI & Device Boundary Review
 
+状态：已完成 alpha。
+
 目标：
 
 让用户清楚知道每个设备的能力边界，避免 AI “想当然”控制设备。
@@ -255,6 +257,10 @@ Provider Raw Graph
 - 能力边界查看。
 - 风险等级编辑。
 - “允许 AI 自动执行 / 需要确认 / 永不自动执行”策略。
+- HCM Prompt Compiler：只把已开放、低风险、免确认的真实能力暴露给 LLM。
+- Real Device Execution Alpha：对话框优先走 HCM -> HA 的真实设备执行链路，失败时回退本地模拟。
+- HCM policy gate：执行前再次校验能力、风险、确认策略和 HA domain。
+- 设备边界最小操作：建议调整清单支持把设备隐藏出 AI 可控 HCM。
 
 示例：
 
@@ -273,6 +279,8 @@ switch.xiaomi_123
 - 用户可以把普通 switch 标记为高风险设备。
 - LLM prompt 只包含已启用设备和已启用能力。
 - UI 能清楚展示设备当前状态和可用动作。
+- 真实执行只支持低风险自动能力，摄像头、燃气、配置/文本、敏感传感器不会下发。
+- dry-run 可以验证自然语言 -> HCM plan -> HA service 的映射，不实际控制设备。
 
 测试要求：
 

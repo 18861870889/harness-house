@@ -653,6 +653,10 @@ button {
   color: var(--cyan);
 }
 
+.overlay-summary span {
+  color: var(--amber);
+}
+
 .default-run-summary {
   display: inline-flex;
   gap: 7px;
@@ -811,6 +815,29 @@ button {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 10px;
+}
+
+.recommendation-item button {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 8px;
+  color: #fecaca;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(127, 29, 29, 0.18);
+  cursor: pointer;
+}
+
+.recommendation-item button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .recommendation-item.severity-critical small {

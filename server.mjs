@@ -8,7 +8,14 @@ import {
   applyHcmOverlay,
   createHcmOverlay,
   setBindingReviewDecision,
+  setThingOverride,
 } from "./src/hcmOverlay.js";
+import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
+import {
+  buildHcmPlannerSystemPrompt,
+  compileHcmForPlanner,
+  normalizeHcmPlannerDraft,
+} from "./src/hcmPlanner.js";
 
 const app = express();
 loadLocalEnv();
@@ -122,6 +129,24 @@ app.post("/api/hcm/overrides/bindings", (request, response) => {
   }
 });
 
+app.post("/api/hcm/overrides/things", (request, response) => {
+  try {
+    const payload = request.body ?? {};
+    validateThingOverrideRequest(payload);
+    const overlay = setThingOverride(readHcmOverlay(), {
+      providerId: payload.providerId || HOME_ASSISTANT_ADAPTER_ID,
+      thingId: payload.thingId,
+      patch: payload.patch,
+    });
+    writeHcmOverlay(overlay);
+    response.json(overlay);
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "HCM thing override update failed",
+    });
+  }
+});
+
 app.post("/api/hcm/overrides/default-run", async (request, response) => {
   if (!homeAssistantAdapter.isConfigured()) {
     response.status(503).json({
@@ -145,6 +170,84 @@ app.post("/api/hcm/overrides/default-run", async (request, response) => {
   } catch (error) {
     response.status(error.statusCode || 400).json({
       error: error.message || "HCM default-run update failed",
+    });
+  }
+});
+
+app.post("/api/hcm/command", async (request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    response.status(503).json({
+      error: "OPENAI_API_KEY is not configured; real HCM command execution requires a planner model.",
+    });
+    return;
+  }
+
+  const startedAt = Date.now();
+  try {
+    const payload = request.body ?? {};
+    validateHcmCommandRequest(payload);
+    const rawHome = await homeAssistantAdapter.discoverHcmHome();
+    const home = applyHcmOverlay(rawHome, readHcmOverlay());
+    const plannerDevices = compileHcmForPlanner(home, {
+      currentRoomId: payload.currentRoomId,
+      selectedRoomId: payload.selectedRoomId,
+    });
+    if (plannerDevices.length === 0) {
+      response.status(409).json({ error: "No auto-executable HCM capabilities are available." });
+      return;
+    }
+
+    const draft = await callHcmPlannerModel({
+      input: payload.input,
+      currentRoomId: payload.currentRoomId,
+      selectedRoomId: payload.selectedRoomId,
+      devices: plannerDevices,
+    });
+    const plan = normalizeHcmPlannerDraft(payload.input, draft, home);
+    const executionPlan = buildHcmExecutionPlan(plan.actions, home);
+    const execution = {
+      status: "planned",
+      dryRun: Boolean(payload.dryRun),
+      accepted: executionPlan.accepted.map(formatAcceptedExecution),
+      rejected: executionPlan.rejected,
+      results: [],
+    };
+
+    if (plan.actions.length === 0) {
+      execution.status = "no_action";
+    } else if (plan.needsConfirmation) {
+      execution.status = "needs_confirmation";
+    } else if (!executionPlan.ok) {
+      execution.status = "rejected";
+    } else if (payload.dryRun) {
+      execution.status = "dry_run";
+    } else {
+      execution.status = "executing";
+      execution.results = await executeHcmServiceCalls(executionPlan.accepted);
+      execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
+    }
+
+    response.json({
+      commandId: crypto.randomUUID(),
+      status: execution.status,
+      latencyMs: Date.now() - startedAt,
+      model: getModel(),
+      plan,
+      execution,
+      planner: {
+        deviceCount: plannerDevices.length,
+        capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
+      },
+    });
+  } catch (error) {
+    response.status(error.statusCode || 502).json({
+      error: error.message || "HCM command failed",
     });
   }
 });
@@ -259,6 +362,32 @@ function validateDefaultRunRequest(payload) {
   }
 }
 
+function validateThingOverrideRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.thingId !== "string" || !payload.thingId.trim()) {
+    throw badRequest("thingId is required");
+  }
+  if (!payload.patch || typeof payload.patch !== "object" || Array.isArray(payload.patch)) {
+    throw badRequest("patch is required");
+  }
+  if (payload.providerId !== undefined && typeof payload.providerId !== "string") {
+    throw badRequest("providerId must be a string");
+  }
+}
+
+function validateHcmCommandRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.input !== "string" || !payload.input.trim()) {
+    throw badRequest("input is required");
+  }
+  if (payload.currentRoomId !== undefined && typeof payload.currentRoomId !== "string") {
+    throw badRequest("currentRoomId must be a string");
+  }
+  if (payload.selectedRoomId !== undefined && typeof payload.selectedRoomId !== "string") {
+    throw badRequest("selectedRoomId must be a string");
+  }
+}
+
 function readHcmOverlay() {
   if (!existsSync(hcmOverlayPath)) return createHcmOverlay();
   try {
@@ -324,6 +453,93 @@ async function callPlannerModel(payload) {
   const draft = parseJsonContent(content);
   validatePlannerDraft(draft);
   return draft;
+}
+
+async function callHcmPlannerModel(payload) {
+  const response = await fetch(`${getBaseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: getModel(),
+      temperature: 0,
+      max_tokens: 700,
+      response_format: { type: "json_object" },
+      ...getProviderOptions(),
+      messages: [
+        {
+          role: "system",
+          content: buildHcmPlannerSystemPrompt(),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            input: payload.input,
+            currentRoomId: payload.currentRoomId,
+            selectedRoomId: payload.selectedRoomId,
+            devices: payload.devices,
+          }),
+        },
+      ],
+    }),
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(`Model provider error ${response.status}: ${text.slice(0, 500)}`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const data = JSON.parse(text);
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Model returned no content");
+  return parseJsonContent(content);
+}
+
+async function executeHcmServiceCalls(accepted) {
+  const results = [];
+  for (const item of accepted) {
+    try {
+      const result = await homeAssistantAdapter.executeServiceCall(item.serviceCall);
+      results.push({
+        ok: true,
+        thingId: item.thing.id,
+        thingName: item.thing.name,
+        capabilityId: item.capability.id,
+        capabilityName: item.capability.name,
+        service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
+        serviceData: item.serviceCall.serviceData,
+        result,
+      });
+    } catch (error) {
+      results.push({
+        ok: false,
+        thingId: item.thing.id,
+        thingName: item.thing.name,
+        capabilityId: item.capability.id,
+        capabilityName: item.capability.name,
+        service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
+        serviceData: item.serviceCall.serviceData,
+        error: error.message,
+      });
+    }
+  }
+  return results;
+}
+
+function formatAcceptedExecution(item) {
+  return {
+    thingId: item.thing.id,
+    thingName: item.thing.name,
+    capabilityId: item.capability.id,
+    capabilityName: item.capability.name,
+    value: item.action.value,
+    service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
+    serviceData: item.serviceCall.serviceData,
+  };
 }
 
 function getProviderOptions() {
