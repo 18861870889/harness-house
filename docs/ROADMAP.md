@@ -205,6 +205,38 @@ Provider Raw Graph
 - 配置、互控、密码、摄像头、燃气等能力默认阻断或需要确认。
 - HCM endpoint 可被 UI 获取并展示真实设备统计。
 
+### v0.3.3 - HCM Overlay & Review Decisions
+
+状态：已完成初版。
+
+目标：
+
+让 Harness House 不只是被动展示 provider 的设备能力，而是开始拥有自己的家庭控制语义层。HA 里的实体变化可以持续同步，但用户对能力边界的判断会保存在 Harness 本地 overlay 中。
+
+新增能力：
+
+- `HCM Overlay`：本地持久化用户对 provider binding 的审核结果。
+- Review Queue 操作：
+  - 允许 AI 自动执行。
+  - 执行前必须确认。
+  - 禁止 AI 自动执行。
+- `/api/hcm/overrides/bindings`：写入单条能力审核决策。
+- `/api/hcm/home`：同步 HA 后自动套用 overlay，再重新计算 stats 和 review。
+- UI 显示已审核数量，Review Queue 样本可直接操作。
+
+设计收益：
+
+- 更换 HA、Matter、米家、Tuya 等 provider 时，上层仍只认 HCM。
+- provider 设备新增或变更后，Harness 重新同步；用户覆盖层继续作为家庭语义事实生效。
+- AI prompt 和执行链路可以只接收已通过 HCM policy gate 的能力。
+
+验收：
+
+- `allow_auto` 会把对应 binding 转为低风险、免确认、可自动执行，并移出待确认队列。
+- `require_confirmation` 会保留在待确认队列，强制执行前确认。
+- `block` 会保留在待确认队列，并标为高风险禁止自动执行。
+- overlay 文件为本地运行态文件，不提交到 GitHub。
+
 ### v0.4 - Mapping UI & Device Boundary Review
 
 目标：

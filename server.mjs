@@ -1,12 +1,14 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
+import { applyHcmOverlay, createHcmOverlay, setBindingReviewDecision } from "./src/hcmOverlay.js";
 
 const app = express();
 loadLocalEnv();
 const port = getCliPort() ?? Number(process.env.PORT ?? 5173);
+const hcmOverlayPath = resolve(process.cwd(), process.env.HARNESS_HCM_OVERLAY_PATH || "data/home-model-overlay.local.json");
 const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
@@ -85,10 +87,32 @@ app.get("/api/hcm/home", async (_request, response) => {
 
   try {
     const home = await homeAssistantAdapter.discoverHcmHome();
-    response.json(home);
+    response.json(applyHcmOverlay(home, readHcmOverlay()));
   } catch (error) {
     response.status(502).json({
       error: error.message || "Home Capability Model sync failed",
+    });
+  }
+});
+
+app.get("/api/hcm/overrides", (_request, response) => {
+  response.json(readHcmOverlay());
+});
+
+app.post("/api/hcm/overrides/bindings", (request, response) => {
+  try {
+    const payload = request.body ?? {};
+    validateBindingOverrideRequest(payload);
+    const overlay = setBindingReviewDecision(readHcmOverlay(), {
+      providerId: payload.providerId || HOME_ASSISTANT_ADAPTER_ID,
+      entityId: payload.entityId,
+      action: payload.action,
+    });
+    writeHcmOverlay(overlay);
+    response.json(overlay);
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "HCM override update failed",
     });
   }
 });
@@ -181,6 +205,33 @@ function validateHomeAssistantActionRequest(payload) {
   if (typeof payload.capability !== "string" || !payload.capability.trim()) {
     throw badRequest("capability is required");
   }
+}
+
+function validateBindingOverrideRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.entityId !== "string" || !payload.entityId.trim()) {
+    throw badRequest("entityId is required");
+  }
+  if (typeof payload.action !== "string" || !payload.action.trim()) {
+    throw badRequest("action is required");
+  }
+  if (payload.providerId !== undefined && typeof payload.providerId !== "string") {
+    throw badRequest("providerId must be a string");
+  }
+}
+
+function readHcmOverlay() {
+  if (!existsSync(hcmOverlayPath)) return createHcmOverlay();
+  try {
+    return JSON.parse(readFileSync(hcmOverlayPath, "utf8"));
+  } catch (error) {
+    throw new Error(`HCM overlay file is invalid JSON: ${error.message}`);
+  }
+}
+
+function writeHcmOverlay(overlay) {
+  mkdirSync(dirname(hcmOverlayPath), { recursive: true });
+  writeFileSync(hcmOverlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
 }
 
 function badRequest(message) {

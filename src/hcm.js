@@ -81,6 +81,8 @@ export function normalizePolicy(policy = {}) {
     confirmation: policy.confirmation || defaultConfirmation(risk),
     autoExecutable: Boolean(policy.autoExecutable),
     reason: policy.reason || "",
+    overlayDecision: policy.overlayDecision,
+    overlayUpdatedAt: policy.overlayUpdatedAt,
   };
 }
 

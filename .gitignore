@@ -37,6 +37,7 @@ logs/
 # Local Home Assistant discovery snapshots
 ha-*-summary.json
 ha-*-snapshot.json
+data/*.local.json
 
 # Virtual env
 venv/

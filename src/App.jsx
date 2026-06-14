@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
-import { getHcmHome } from "./hcmClient.js";
+import { getHcmHome, updateHcmBindingOverride } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
 import {
   createInitialLog,
@@ -80,6 +80,7 @@ export default function App() {
     state: "idle",
     error: null,
   });
+  const [reviewActionId, setReviewActionId] = useState(null);
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -124,6 +125,27 @@ export default function App() {
   useEffect(() => {
     refreshHcmHome();
   }, [refreshHcmHome]);
+
+  const updateBindingReview = useCallback(
+    async (binding, action) => {
+      if (!binding?.entityId || reviewActionId) return;
+      setReviewActionId(`${binding.id}:${action}`);
+      setHcmStatus({ state: "loading", error: null });
+      try {
+        await updateHcmBindingOverride({
+          providerId: hcmHome?.provider?.id,
+          entityId: binding.entityId,
+          action,
+        });
+        await refreshHcmHome();
+      } catch (error) {
+        setHcmStatus({ state: "error", error: error.message });
+      } finally {
+        setReviewActionId(null);
+      }
+    },
+    [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
+  );
 
   async function submitCommand(raw = input) {
     const command = raw.trim();
@@ -281,7 +303,13 @@ export default function App() {
       <aside className="left-rail">
         <Header currentRoomId={currentRoomId} activeCount={activeDevices.length} llmStatus={llmStatus} />
         <SystemMetrics devices={devices} />
-        <HcmCatalog home={hcmHome} status={hcmStatus} onRefresh={refreshHcmHome} />
+        <HcmCatalog
+          home={hcmHome}
+          status={hcmStatus}
+          onRefresh={refreshHcmHome}
+          onReviewAction={updateBindingReview}
+          reviewActionId={reviewActionId}
+        />
         <RoomSelector selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
       </aside>
@@ -393,7 +421,7 @@ function Metric({ label, value, tone = "normal" }) {
   );
 }
 
-function HcmCatalog({ home, status, onRefresh }) {
+function HcmCatalog({ home, status, onRefresh, onReviewAction, reviewActionId }) {
   const areaCounts = useMemo(() => {
     if (!home) return [];
     const spaces = new Map(home.spaces.map((space) => [space.id, space.name]));
@@ -439,7 +467,12 @@ function HcmCatalog({ home, status, onRefresh }) {
               </span>
             ))}
           </div>
-          <BindingReview review={home.review} />
+          {home.overlay?.bindingOverrideCount > 0 && (
+            <div className="overlay-summary">
+              已审核 <strong>{home.overlay.bindingOverrideCount}</strong>
+            </div>
+          )}
+          <BindingReview review={home.review} onAction={onReviewAction} actionId={reviewActionId} />
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
               <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
@@ -457,7 +490,7 @@ function HcmCatalog({ home, status, onRefresh }) {
   );
 }
 
-function BindingReview({ review }) {
+function BindingReview({ review, onAction, actionId }) {
   if (!review || review.total === 0) return null;
   const riskItems = Object.entries(review.byRisk ?? {}).sort(([, first], [, second]) => second - first);
   const samples = review.samples ?? [];
@@ -489,6 +522,35 @@ function BindingReview({ review }) {
             <span>{item.thingName}</span>
             <strong>{item.entityName}</strong>
             <small>{item.reason}</small>
+            <div className="review-actions">
+              <button
+                type="button"
+                title="允许 AI 自动执行"
+                disabled={Boolean(actionId)}
+                onClick={() => onAction(item, "allow_auto")}
+              >
+                <Check size={12} />
+                允许
+              </button>
+              <button
+                type="button"
+                title="执行前必须确认"
+                disabled={Boolean(actionId)}
+                onClick={() => onAction(item, "require_confirmation")}
+              >
+                <ShieldCheck size={12} />
+                确认
+              </button>
+              <button
+                type="button"
+                title="禁止 AI 自动执行"
+                disabled={Boolean(actionId)}
+                onClick={() => onAction(item, "block")}
+              >
+                <X size={12} />
+                禁止
+              </button>
+            </div>
           </div>
         ))}
       </div>
