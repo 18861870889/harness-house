@@ -630,6 +630,129 @@ button {
   color: var(--cyan);
 }
 
+.binding-review {
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.review-header strong {
+  color: var(--amber);
+}
+
+.review-risk-strip {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.risk-chip {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.risk-chip.risk-medium {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.risk-chip.risk-high,
+.risk-chip.risk-sensitive {
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.review-reasons,
+.review-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.review-reason {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.review-reason span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-reason strong {
+  color: var(--text);
+}
+
+.review-sample {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.review-sample span,
+.review-sample strong,
+.review-sample small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-sample span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.review-sample strong {
+  color: var(--cyan);
+  font-size: 10px;
+  text-align: right;
+}
+
+.review-sample small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.review-sample.risk-high small,
+.review-sample.risk-sensitive small {
+  color: #fecaca;
+}
+
 .hcm-thing-list {
   display: flex;
   flex-direction: column;

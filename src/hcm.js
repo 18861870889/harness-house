@@ -29,6 +29,7 @@ export function createHcmHome({
     provider: provider ?? { id: "unknown", name: "Unknown Provider" },
     syncedAt,
     stats: summarizeHcm(normalizedThings, unresolvedBindings),
+    review: summarizeBindingReview(unresolvedBindings),
     spaces: normalizedSpaces,
     things: normalizedThings,
     unresolvedBindings,
@@ -108,6 +109,38 @@ export function summarizeHcm(things, unresolvedBindings = []) {
     unresolvedBindingCount: unresolvedBindings.length,
     types,
     policies,
+  };
+}
+
+export function summarizeBindingReview(unresolvedBindings = []) {
+  const byRisk = {};
+  const byKind = {};
+  const byReason = {};
+  const byThingType = {};
+
+  for (const binding of unresolvedBindings) {
+    const risk = binding.suggestedRisk || "unknown";
+    const kind = binding.kind || "unknown";
+    const reason = binding.reason || "未分类";
+    const thingType = binding.thingType || "generic";
+
+    byRisk[risk] = (byRisk[risk] || 0) + 1;
+    byKind[kind] = (byKind[kind] || 0) + 1;
+    byReason[reason] = (byReason[reason] || 0) + 1;
+    byThingType[thingType] = (byThingType[thingType] || 0) + 1;
+  }
+
+  const sortedReasons = Object.entries(byReason)
+    .sort(([, first], [, second]) => second - first)
+    .map(([reason, count]) => ({ reason, count }));
+
+  return {
+    total: unresolvedBindings.length,
+    byRisk,
+    byKind,
+    byThingType,
+    topReasons: sortedReasons.slice(0, 6),
+    samples: unresolvedBindings.slice(0, 8),
   };
 }
 

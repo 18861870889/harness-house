@@ -15,7 +15,7 @@ const ROOM_ALIASES = [
   ["balcony", /阳台/],
   ["cat_room", /猫猫房|猫房/],
   ["second", /次卧|小孩房|儿童房/],
-  ["master", /主卧|卧室/],
+  ["master", /主卧/],
 ];
 
 const BLOCKED_CONFIG_PATTERN =
@@ -366,11 +366,17 @@ function createUnresolvedBinding({ device, entity, capability, thing, state }) {
       id: `${thing.id}:${capability.id}`,
       thingId: thing.id,
       thingName: thing.name,
+      thingType: thing.type,
+      spaceId: thing.spaceId,
       entityId: entity.entity_id,
       entityName: capability.name,
+      kind: capability.kind,
+      valueType: capability.valueType,
       currentState: state?.state,
       reason: capability.policy.reason,
       suggestedRisk: capability.policy.risk,
+      confirmation: capability.policy.confirmation,
+      autoExecutable: capability.policy.autoExecutable,
     },
   ];
 }

@@ -439,6 +439,7 @@ function HcmCatalog({ home, status, onRefresh }) {
               </span>
             ))}
           </div>
+          <BindingReview review={home.review} />
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
               <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
@@ -453,6 +454,45 @@ function HcmCatalog({ home, status, onRefresh }) {
         </>
       )}
     </section>
+  );
+}
+
+function BindingReview({ review }) {
+  if (!review || review.total === 0) return null;
+  const riskItems = Object.entries(review.byRisk ?? {}).sort(([, first], [, second]) => second - first);
+  const samples = review.samples ?? [];
+
+  return (
+    <div className="binding-review">
+      <div className="review-header">
+        <span>Review Queue</span>
+        <strong>{review.total}</strong>
+      </div>
+      <div className="review-risk-strip">
+        {riskItems.map(([risk, count]) => (
+          <span className={`risk-chip risk-${risk}`} key={risk}>
+            {risk} <strong>{count}</strong>
+          </span>
+        ))}
+      </div>
+      <div className="review-reasons">
+        {(review.topReasons ?? []).slice(0, 3).map((item) => (
+          <div className="review-reason" key={item.reason}>
+            <span>{item.reason}</span>
+            <strong>{item.count}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="review-samples">
+        {samples.slice(0, 3).map((item) => (
+          <div className={`review-sample risk-${item.suggestedRisk}`} key={item.id}>
+            <span>{item.thingName}</span>
+            <strong>{item.entityName}</strong>
+            <small>{item.reason}</small>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

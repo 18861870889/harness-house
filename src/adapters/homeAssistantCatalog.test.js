@@ -91,10 +91,20 @@ describe("home assistant catalog mapper", () => {
     );
     expect(hcm.unresolvedBindings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ entityId: "switch.topwit_living_mutual_control_p_23_1" }),
-        expect.objectContaining({ entityId: "binary_sensor.study_presence", suggestedRisk: "sensitive" }),
+        expect.objectContaining({
+          entityId: "switch.topwit_living_mutual_control_p_23_1",
+          thingType: "switch_panel",
+          kind: "control",
+          confirmation: "always",
+        }),
+        expect.objectContaining({
+          entityId: "binary_sensor.study_presence",
+          suggestedRisk: "sensitive",
+          kind: "sensor",
+        }),
       ]),
     );
+    expect(hcm.review.byRisk).toMatchObject({ high: 1, sensitive: 1 });
   });
 
   it("keeps non-xiaomi devices out of the Xiaomi-derived catalog", () => {
@@ -130,5 +140,23 @@ describe("home assistant catalog mapper", () => {
 
     expect(hcm.things.find((thing) => thing.name === "风扇").spaceId).toBe("master");
     expect(hcm.things.find((thing) => thing.name === "主卫开关").spaceId).toBe("master_bath");
+  });
+
+  it("does not let a generic bedroom area overwrite master bedroom semantics", () => {
+    const hcm = mapHomeAssistantGraphToHcm({
+      areas: [
+        { area_id: "generic_bedroom", name: "卧室" },
+        { area_id: "xiaomi_master", name: "栗子、小白、团团、久久的窝 主卧" },
+      ],
+      devices: [
+        { id: "fan", area_id: "xiaomi_master", identifiers: [["xiaomi_home", "cn_fan"]], name: "风扇" },
+      ],
+      entities: [{ device_id: "fan", entity_id: "fan.master", platform: "xiaomi_home", original_name: "风扇" }],
+      states: [{ entity_id: "fan.master", state: "off", attributes: {} }],
+    });
+
+    const spaces = new Map(hcm.spaces.map((space) => [space.id, space.name]));
+    expect(hcm.things[0].spaceId).toBe("master");
+    expect(spaces.get("master")).toBe("主卧");
   });
 });
