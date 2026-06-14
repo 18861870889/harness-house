@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { deviceTypeNames, getRoomName, rooms } from "./simulator.js";
+import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
+import { deviceTypeNames, rooms } from "./simulator.js";
 
 const roomColor = {
   entry: 0x27364b,
@@ -12,6 +13,7 @@ const roomColor = {
   bedroom: 0x3e3548,
   bath: 0x2f4650,
   balcony: 0x304a44,
+  generic: 0x334155,
 };
 
 const deviceOffsets = {
@@ -105,6 +107,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function statusForDevice(device) {
+  if (device.statusLabel) return device.statusLabel;
   switch (device.type) {
     case "light":
       return device.on ? `${device.brightness}%` : "关";
@@ -140,12 +143,17 @@ function statusForDevice(device) {
 }
 
 function devicePosition(device) {
+  if (typeof device.sceneX === "number" && typeof device.sceneZ === "number") {
+    return [device.sceneX, device.sceneZ];
+  }
   const room = rooms.find((item) => item.id === device.roomId);
+  if (!room) return [0, 0];
   const [ox, oz] = deviceOffsets[device.id] ?? [0, 0];
   return [room.x + ox, room.z + oz];
 }
 
 function isActive(device) {
+  if (device.source === "hcm") return Boolean(device.active);
   if ("on" in device) return device.on;
   if ("detected" in device) return device.detected;
   if ("open" in device) return device.open;
@@ -155,7 +163,11 @@ function isActive(device) {
   return false;
 }
 
-export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
+export default function ThreeHouse({ devices, sceneModel, selectedRoomId, onSelectRoom }) {
+  const model = useMemo(
+    () => sceneModel ?? createHouseSceneModel({ simulatorRooms: rooms, simulatorDevices: devices }),
+    [devices, sceneModel],
+  );
   const containerRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
@@ -291,24 +303,24 @@ export default function ThreeHouse({ devices, selectedRoomId, onSelectRoom }) {
     scene.add(house);
     houseGroupRef.current = house;
 
-    addRooms(house, selectedRoomId);
-    addFurniture(house);
-    addDevices(house, devices, selectedRoomId, animatedRef.current);
-  }, [devices, selectedRoomId]);
+    addRooms(house, model.rooms, selectedRoomId);
+    addFurniture(house, model.rooms);
+    addDevices(house, model.devices, selectedRoomId, animatedRef.current);
+  }, [model, selectedRoomId]);
 
   return (
     <div className="scene-shell" ref={containerRef}>
       <div className="scene-hud">
-        <span>3D Simulated House</span>
-        <strong>{selectedRoomId ? getRoomName(selectedRoomId) : "全屋"}</strong>
+        <span>{model.source === "hcm" ? "3D HCM House" : "3D Simulated House"}</span>
+        <strong>{selectedRoomId ? getSceneRoomName(selectedRoomId, model.rooms) : "全屋"}</strong>
       </div>
       <div className="scene-controls-hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
     </div>
   );
 }
 
-function addRooms(group, selectedRoomId) {
-  for (const room of rooms) {
+function addRooms(group, sceneRooms, selectedRoomId) {
+  for (const room of sceneRooms) {
     const active = room.id === selectedRoomId;
     const floorMaterial = new THREE.MeshStandardMaterial({
       color: active ? 0x486c82 : roomColor[room.type] ?? 0x2d3748,
@@ -371,20 +383,31 @@ function addWalls(group, room, active) {
   }
 }
 
-function addFurniture(group) {
+function addFurniture(group, sceneRooms) {
+  const roomById = new Map(sceneRooms.map((room) => [room.id, room]));
   const materials = {
     bed: new THREE.MeshStandardMaterial({ color: 0xbcae9f, roughness: 0.8 }),
     sofa: new THREE.MeshStandardMaterial({ color: 0x9b6b73, roughness: 0.82 }),
     table: new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.7 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.78 }),
   };
-  addBox(group, [1.8, 0.22, 0.68], [1.4, 0.16, -2.05], materials.sofa);
-  addBox(group, [0.9, 0.16, 0.55], [0.15, 0.13, -1.0], materials.table);
-  addBox(group, [1.55, 0.18, 1.05], [1.8, 0.14, 2.2], materials.bed);
-  addBox(group, [1.3, 0.18, 0.95], [-0.9, 0.14, 2.4], materials.bed);
-  addBox(group, [0.95, 0.55, 0.18], [2.85, 0.32, 0.42], materials.wood);
-  addBox(group, [1.0, 0.15, 0.65], [-1.6, 0.14, -1.1], materials.table);
-  addBox(group, [0.55, 0.44, 1.7], [-4.55, 0.25, -0.55], materials.wood);
+  const living = roomById.get("living");
+  const dining = roomById.get("dining");
+  const master = roomById.get("master");
+  const second = roomById.get("second");
+  const catRoom = roomById.get("cat_room");
+  const kitchen = roomById.get("kitchen");
+
+  if (living) {
+    addBox(group, [1.8, 0.22, 0.68], [living.x - 0.3, 0.16, living.z - 0.8], materials.sofa);
+    addBox(group, [0.9, 0.16, 0.55], [living.x - 0.35, 0.13, living.z], materials.table);
+    addBox(group, [0.95, 0.55, 0.18], [living.x + living.width * 0.32, 0.32, living.z + 0.2], materials.wood);
+  }
+  if (dining) addBox(group, [1.0, 0.15, 0.65], [dining.x, 0.14, dining.z], materials.table);
+  if (master) addBox(group, [1.55, 0.18, 1.05], [master.x, 0.14, master.z + 0.05], materials.bed);
+  if (second) addBox(group, [1.25, 0.18, 0.95], [second.x, 0.14, second.z + 0.05], materials.bed);
+  if (catRoom) addBox(group, [1.2, 0.16, 0.82], [catRoom.x - 0.15, 0.13, catRoom.z + 0.25], materials.bed);
+  if (kitchen) addBox(group, [0.55, 0.44, 1.5], [kitchen.x - kitchen.width * 0.25, 0.25, kitchen.z], materials.wood);
 }
 
 function addBox(group, size, position, material) {
@@ -411,6 +434,12 @@ function addDevices(group, devices, selectedRoomId, animated) {
       addTvDevice(group, device, x, z);
     } else if (device.type === "ac") {
       addPanelDevice(group, device, x, z, 0x7dd3fc);
+    } else if (device.type === "switch_panel") {
+      addPanelDevice(group, device, x, z, 0xfbbf24);
+    } else if (device.type === "hub") {
+      addPanelDevice(group, device, x, z, 0x5eead4);
+    } else if (device.type === "scale") {
+      addPanelDevice(group, device, x, z, 0xc4b5fd);
     } else if (device.type === "robot_vacuum") {
       addRobotDevice(group, device, x, z, animated);
     } else if (device.type === "camera") {

@@ -116,6 +116,7 @@ export const roomAliases = {
 export const deviceTypeNames = {
   light: "灯",
   switch: "开关",
+  switch_panel: "开关面板",
   ac: "空调",
   fan: "风扇",
   curtain: "窗帘",
@@ -130,6 +131,8 @@ export const deviceTypeNames = {
   washer: "洗衣机",
   dryer: "烘干机",
   camera: "监控",
+  hub: "网关",
+  scale: "体脂秤",
   generic_sensor: "只读传感器",
   generic_entity: "只读实体",
 };

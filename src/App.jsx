@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
+import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
   applyDefaultRunPolicy,
   deleteLearningCandidate,
@@ -106,9 +107,21 @@ export default function App() {
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
+  const houseSceneModel = useMemo(
+    () =>
+      createHouseSceneModel({
+        hcmHome,
+        simulatorRooms: rooms,
+        simulatorDevices: devices,
+      }),
+    [devices, hcmHome],
+  );
   const selectedRoomDevices = useMemo(
-    () => Object.values(devices).filter((device) => device.roomId === selectedRoomId),
-    [devices, selectedRoomId],
+    () =>
+      houseSceneModel.source === "hcm"
+        ? houseSceneModel.devices.filter((device) => device.roomId === selectedRoomId)
+        : Object.values(devices).filter((device) => device.roomId === selectedRoomId),
+    [devices, houseSceneModel, selectedRoomId],
   );
   const activeDevices = useMemo(
     () =>
@@ -531,13 +544,19 @@ export default function App() {
       <section className="scene-panel" aria-label="三维房屋模拟器">
         <ThreeHouse
           devices={devices}
+          sceneModel={houseSceneModel}
           selectedRoomId={selectedRoomId}
           onSelectRoom={handleSelectRoom}
         />
       </section>
 
       <aside className="left-rail">
-        <Header currentRoomId={currentRoomId} activeCount={activeDevices.length} llmStatus={llmStatus} />
+        <Header
+          currentRoomId={currentRoomId}
+          activeCount={activeDevices.length}
+          llmStatus={llmStatus}
+          sceneRooms={houseSceneModel.rooms}
+        />
         <SystemMetrics devices={devices} />
         <HcmCatalog
           home={hcmHome}
@@ -548,7 +567,7 @@ export default function App() {
           reviewActionId={reviewActionId}
           defaultRunSummary={defaultRunSummary}
         />
-        <RoomSelector selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
+        <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
       </aside>
 
@@ -599,7 +618,7 @@ export default function App() {
   );
 }
 
-function Header({ currentRoomId, activeCount, llmStatus }) {
+function Header({ currentRoomId, activeCount, llmStatus, sceneRooms }) {
   return (
     <header className="product-header">
       <div className="mark">
@@ -614,7 +633,7 @@ function Header({ currentRoomId, activeCount, llmStatus }) {
         Local
       </div>
       <div className="header-facts">
-        <Fact icon={Layers3} label="当前区域" value={getRoomName(currentRoomId)} />
+        <Fact icon={Layers3} label="当前区域" value={getSceneRoomName(currentRoomId, sceneRooms)} />
         <Fact icon={Power} label="活跃设备" value={`${activeCount}`} />
         <Fact
           icon={Sparkles}
@@ -844,7 +863,7 @@ function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {
   );
 }
 
-function RoomSelector({ selectedRoomId, onSelect }) {
+function RoomSelector({ rooms: sceneRooms, selectedRoomId, onSelect }) {
   return (
     <section className="panel room-panel">
       <div className="panel-title">
@@ -852,7 +871,7 @@ function RoomSelector({ selectedRoomId, onSelect }) {
         <h2>Rooms</h2>
       </div>
       <div className="room-grid">
-        {rooms.map((room) => (
+        {sceneRooms.map((room) => (
           <button
             className={room.id === selectedRoomId ? "room-button selected" : "room-button"}
             key={room.id}
@@ -860,7 +879,7 @@ function RoomSelector({ selectedRoomId, onSelect }) {
             onClick={() => onSelect(room.id)}
           >
             <span>{room.name}</span>
-            <small>{room.presence ? "有人" : "待机"}</small>
+            <small>{room.deviceCount ? `${room.deviceCount} 设备` : room.presence ? "有人" : "待机"}</small>
           </button>
         ))}
       </div>
@@ -896,6 +915,7 @@ function DeviceRow({ device }) {
 }
 
 function deviceStateLabel(device) {
+  if (device.statusLabel) return device.statusLabel;
   if (device.type === "light") return device.on ? `${device.brightness}%` : "关闭";
   if (device.type === "ac") return device.on ? `${device.temperature}°C` : "关闭";
   if (device.type === "fan") return device.on ? `${device.speed}档` : "关闭";
