@@ -38,6 +38,22 @@ function createExecutorHome() {
           },
         ],
       },
+      {
+        id: "ha_speaker",
+        name: "小爱音箱Pro",
+        type: "tv",
+        spaceId: "living",
+        capabilities: [
+          {
+            id: "speaker",
+            name: "音箱",
+            kind: "control",
+            valueType: "unknown",
+            policy: { risk: "low", confirmation: "never", autoExecutable: true },
+            binding: { provider: "home_assistant", domain: "media_player", entityId: "media_player.xiaoai" },
+          },
+        ],
+      },
     ],
   });
 }
@@ -68,6 +84,22 @@ describe("hcm executor", () => {
     expect(result).toMatchObject({
       ok: false,
       code: "policy_blocked",
+    });
+  });
+
+  it("maps media player stop intent to media_stop instead of turn_off", () => {
+    const result = validateHcmAction(
+      { thingId: "ha_speaker", capabilityId: "speaker", value: false },
+      createExecutorHome(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      serviceCall: {
+        domain: "media_player",
+        service: "media_stop",
+        serviceData: { entity_id: "media_player.xiaoai" },
+      },
     });
   });
 });

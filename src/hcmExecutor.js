@@ -75,6 +75,9 @@ export function mapHcmActionToHomeAssistantService({ capability, value }) {
     if (domain === "cover") {
       return { domain, service: value ? "open_cover" : "close_cover", serviceData };
     }
+    if (domain === "media_player" && value === false) {
+      return { domain, service: "media_stop", serviceData };
+    }
     return { domain, service: value ? "turn_on" : "turn_off", serviceData };
   }
 
