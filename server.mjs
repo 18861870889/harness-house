@@ -17,7 +17,13 @@ import {
   normalizeHcmPlannerDraft,
 } from "./src/hcmPlanner.js";
 import { createCommandTrace, finishCommandTrace, runCommandStage } from "./src/commandRuntime.js";
-import { createLearningMemory, recordLearningObservation, summarizeLearningMemory } from "./src/learningLayer.js";
+import {
+  createLearningMemory,
+  deleteLearningCandidate,
+  recordLearningObservation,
+  summarizeLearningMemory,
+  updateLearningCandidate,
+} from "./src/learningLayer.js";
 
 const app = express();
 loadLocalEnv();
@@ -179,130 +185,11 @@ app.post("/api/hcm/overrides/default-run", async (request, response) => {
 });
 
 app.post("/api/hcm/command", async (request, response) => {
-  if (!homeAssistantAdapter.isConfigured()) {
-    response.status(503).json({
-      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
-    });
-    return;
-  }
-  if (!process.env.OPENAI_API_KEY) {
-    response.status(503).json({
-      error: "OPENAI_API_KEY is not configured; real HCM command execution requires a planner model.",
-    });
-    return;
-  }
-
-  const trace = createCommandTrace({
-    input: request.body?.input,
-    path: "hcm-real",
-    dryRun: Boolean(request.body?.dryRun),
-  });
   try {
     const payload = request.body ?? {};
     validateHcmCommandRequest(payload);
-    const rawHome = await runCommandStage(trace, "context_snapshot", () => homeAssistantAdapter.discoverHcmHome(), {
-      summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
-    });
-    const home = await runCommandStage(trace, "policy_overlay", async () => applyHcmOverlay(rawHome, readHcmOverlay()), {
-      summarize: (home) => ({
-        autoExecutable: home.stats.autoExecutableCapabilities,
-        protected: home.stats.unresolvedBindingCount,
-      }),
-    });
-    const plannerDevices = await runCommandStage(
-      trace,
-      "prompt_compile",
-      async () =>
-        compileHcmForPlanner(home, {
-          currentRoomId: payload.currentRoomId,
-          selectedRoomId: payload.selectedRoomId,
-        }),
-      {
-        summarize: (devices) => ({
-          devices: devices.length,
-          capabilities: devices.reduce((sum, device) => sum + device.capabilities.length, 0),
-        }),
-      },
-    );
-    if (plannerDevices.length === 0) {
-      response.status(409).json({ error: "No auto-executable HCM capabilities are available." });
-      return;
-    }
-
-    const draft = await runCommandStage(
-      trace,
-      "llm_planner",
-      () =>
-        callHcmPlannerModel({
-          input: payload.input,
-          currentRoomId: payload.currentRoomId,
-          selectedRoomId: payload.selectedRoomId,
-          devices: plannerDevices,
-        }),
-      { summarize: (draft) => ({ intent: draft.intent, actionCount: draft.actions?.length ?? 0 }) },
-    );
-    const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
-      summarize: (plan) => ({ intent: plan.intent, actionCount: plan.actions.length, needsConfirmation: plan.needsConfirmation }),
-    });
-    const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
-      summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
-    });
-    const execution = {
-      status: "planned",
-      dryRun: Boolean(payload.dryRun),
-      accepted: executionPlan.accepted.map(formatAcceptedExecution),
-      rejected: executionPlan.rejected,
-      results: [],
-    };
-
-    if (plan.actions.length === 0) {
-      execution.status = "no_action";
-    } else if (plan.needsConfirmation) {
-      execution.status = "needs_confirmation";
-    } else if (!executionPlan.ok) {
-      execution.status = "rejected";
-    } else if (payload.dryRun) {
-      execution.status = "dry_run";
-    } else {
-      execution.status = "executing";
-      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(executionPlan.accepted), {
-        summarize: (results) => ({
-          ok: results.filter((result) => result.ok).length,
-          failed: results.filter((result) => !result.ok).length,
-        }),
-      });
-      execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
-    }
-
-    const auditEntry = finishCommandTrace(trace, {
-      status: execution.status,
-      plan,
-      execution,
-      model: getModel(),
-      planner: {
-        deviceCount: plannerDevices.length,
-        capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
-      },
-    });
-    writeCommandAuditEntry(auditEntry);
-    updateLearningMemory(auditEntry);
-
-    response.json({
-      commandId: trace.commandId,
-      status: execution.status,
-      latencyMs: auditEntry.latencyMs,
-      model: getModel(),
-      plan,
-      execution,
-      planner: {
-        deviceCount: plannerDevices.length,
-        capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
-      },
-      trace: auditEntry,
-    });
+    response.json(await runHcmCommandPipeline(payload));
   } catch (error) {
-    const auditEntry = finishCommandTrace(trace, { status: "error" });
-    writeCommandAuditEntry({ ...auditEntry, error: error.message });
     response.status(error.statusCode || 502).json({
       error: error.message || "HCM command failed",
     });
@@ -316,8 +203,56 @@ app.get("/api/commands/audit", (request, response) => {
   });
 });
 
+app.post("/api/commands/replay", async (request, response) => {
+  try {
+    const payload = request.body ?? {};
+    validateReplayRequest(payload);
+    const entry = readCommandAuditEntries(200).find((item) => item.commandId === payload.commandId);
+    if (!entry) {
+      response.status(404).json({ error: "Command audit entry not found" });
+      return;
+    }
+    const replayResponse = await runHcmCommandPipeline({
+      input: entry.input,
+      currentRoomId: payload.currentRoomId,
+      selectedRoomId: payload.selectedRoomId,
+      dryRun: true,
+      replayOf: entry.commandId,
+    });
+    response.json(replayResponse);
+  } catch (error) {
+    response.status(error.statusCode || 502).json({
+      error: error.message || "Command replay failed",
+    });
+  }
+});
+
 app.get("/api/learning/memory", (_request, response) => {
   response.json(summarizeLearningMemory(readLearningMemory()));
+});
+
+app.patch("/api/learning/candidates/:candidateId", (request, response) => {
+  try {
+    const memory = updateLearningCandidate(readLearningMemory(), request.params.candidateId, request.body ?? {});
+    writeLearningMemory(memory);
+    response.json(summarizeLearningMemory(memory));
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "Learning candidate update failed",
+    });
+  }
+});
+
+app.delete("/api/learning/candidates/:candidateId", (request, response) => {
+  try {
+    const memory = deleteLearningCandidate(readLearningMemory(), request.params.candidateId);
+    writeLearningMemory(memory);
+    response.json(summarizeLearningMemory(memory));
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "Learning candidate delete failed",
+    });
+  }
 });
 
 app.post("/api/adapters/home-assistant/actions", async (request, response) => {
@@ -454,6 +389,25 @@ function validateHcmCommandRequest(payload) {
   if (payload.selectedRoomId !== undefined && typeof payload.selectedRoomId !== "string") {
     throw badRequest("selectedRoomId must be a string");
   }
+  if (payload.dryRun !== undefined && typeof payload.dryRun !== "boolean") {
+    throw badRequest("dryRun must be a boolean");
+  }
+  if (payload.replayOf !== undefined && typeof payload.replayOf !== "string") {
+    throw badRequest("replayOf must be a string");
+  }
+}
+
+function validateReplayRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.commandId !== "string" || !payload.commandId.trim()) {
+    throw badRequest("commandId is required");
+  }
+  if (payload.currentRoomId !== undefined && typeof payload.currentRoomId !== "string") {
+    throw badRequest("currentRoomId must be a string");
+  }
+  if (payload.selectedRoomId !== undefined && typeof payload.selectedRoomId !== "string") {
+    throw badRequest("selectedRoomId must be a string");
+  }
 }
 
 function readHcmOverlay() {
@@ -503,6 +457,133 @@ function writeLearningMemory(memory) {
 function updateLearningMemory(auditEntry) {
   const memory = recordLearningObservation(readLearningMemory(), auditEntry);
   writeLearningMemory(memory);
+}
+
+async function runHcmCommandPipeline(payload) {
+  if (!homeAssistantAdapter.isConfigured()) {
+    const error = new Error("Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.");
+    error.statusCode = 503;
+    throw error;
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    const error = new Error("OPENAI_API_KEY is not configured; real HCM command execution requires a planner model.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const trace = createCommandTrace({
+    input: payload.input,
+    path: "hcm-real",
+    dryRun: Boolean(payload.dryRun),
+    replayOf: payload.replayOf,
+  });
+
+  try {
+    const rawHome = await runCommandStage(trace, "context_snapshot", () => homeAssistantAdapter.discoverHcmHome(), {
+      summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
+    });
+    const home = await runCommandStage(trace, "policy_overlay", async () => applyHcmOverlay(rawHome, readHcmOverlay()), {
+      summarize: (home) => ({
+        autoExecutable: home.stats.autoExecutableCapabilities,
+        protected: home.stats.unresolvedBindingCount,
+      }),
+    });
+    const plannerDevices = await runCommandStage(
+      trace,
+      "prompt_compile",
+      async () =>
+        compileHcmForPlanner(home, {
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+        }),
+      {
+        summarize: (devices) => ({
+          devices: devices.length,
+          capabilities: devices.reduce((sum, device) => sum + device.capabilities.length, 0),
+        }),
+      },
+    );
+    if (plannerDevices.length === 0) {
+      const error = new Error("No auto-executable HCM capabilities are available.");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const draft = await runCommandStage(
+      trace,
+      "llm_planner",
+      () =>
+        callHcmPlannerModel({
+          input: payload.input,
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+          devices: plannerDevices,
+        }),
+      { summarize: (draft) => ({ intent: draft.intent, actionCount: draft.actions?.length ?? 0 }) },
+    );
+    const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
+      summarize: (plan) => ({ intent: plan.intent, actionCount: plan.actions.length, needsConfirmation: plan.needsConfirmation }),
+    });
+    const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
+      summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
+    });
+    const execution = {
+      status: "planned",
+      dryRun: Boolean(payload.dryRun),
+      accepted: executionPlan.accepted.map(formatAcceptedExecution),
+      rejected: executionPlan.rejected,
+      results: [],
+    };
+
+    if (plan.actions.length === 0) {
+      execution.status = "no_action";
+    } else if (plan.needsConfirmation) {
+      execution.status = "needs_confirmation";
+    } else if (!executionPlan.ok) {
+      execution.status = "rejected";
+    } else if (payload.dryRun) {
+      execution.status = "dry_run";
+    } else {
+      execution.status = "executing";
+      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(executionPlan.accepted), {
+        summarize: (results) => ({
+          ok: results.filter((result) => result.ok).length,
+          failed: results.filter((result) => !result.ok).length,
+        }),
+      });
+      execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
+    }
+
+    const planner = {
+      deviceCount: plannerDevices.length,
+      capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
+    };
+    const auditEntry = finishCommandTrace(trace, {
+      status: execution.status,
+      plan,
+      execution,
+      model: getModel(),
+      planner,
+    });
+    writeCommandAuditEntry(auditEntry);
+    updateLearningMemory(auditEntry);
+
+    return {
+      commandId: trace.commandId,
+      replayOf: payload.replayOf,
+      status: execution.status,
+      latencyMs: auditEntry.latencyMs,
+      model: getModel(),
+      plan,
+      execution,
+      planner,
+      trace: auditEntry,
+    };
+  } catch (error) {
+    const auditEntry = finishCommandTrace(trace, { status: "error", model: getModel() });
+    writeCommandAuditEntry({ ...auditEntry, error: error.message });
+    throw error;
+  }
 }
 
 function badRequest(message) {

@@ -291,7 +291,7 @@ switch.xiaomi_123
 
 ### v0.5 - Production-grade Command Pipeline
 
-状态：已完成 alpha。
+状态：已完成。
 
 目标：
 
@@ -334,6 +334,8 @@ switch.xiaomi_123
 - 2 秒 SLA 可以被自动测试。
 - `/api/hcm/command` 返回结构化 trace，包含 context、prompt compile、LLM、safety、executor 阶段。
 - `/api/commands/audit` 可读取本地最近命令审计。
+- `/api/commands/replay` 支持从 audit 中选择历史命令，以强制 dry-run 模式重新规划。
+- trace 支持 `replayOf`，可以追溯 dry-run 回放来源。
 
 测试要求：
 
@@ -344,7 +346,7 @@ switch.xiaomi_123
 
 ### v0.6 - Learning Layer Alpha
 
-状态：已完成 alpha。
+状态：已完成。
 
 目标：
 
@@ -373,6 +375,9 @@ switch.xiaomi_123
 - 学习不会影响高风险设备确认策略。
 - `/api/learning/memory` 展示 shadow-mode 学习候选。
 - UI 展示最近审计和学习候选，但不会自动写入 overlay。
+- UI 支持忽略、删除学习候选。
+- 删除候选会写入 tombstone，避免同一条历史观察立刻重新生成候选。
+- 被忽略候选不会进入 top candidates，但保留在 memory 中供后续分析。
 
 测试要求：
 

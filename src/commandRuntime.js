@@ -1,10 +1,11 @@
-export function createCommandTrace({ input, path = "hcm-real", dryRun = false, now = () => Date.now() } = {}) {
+export function createCommandTrace({ input, path = "hcm-real", dryRun = false, replayOf, now = () => Date.now() } = {}) {
   const startedAt = now();
   return {
     commandId: crypto.randomUUID(),
     input,
     path,
     dryRun,
+    replayOf,
     startedAt,
     stages: [],
     status: "running",
@@ -41,6 +42,7 @@ export function finishCommandTrace(trace, { status, plan, execution, model, plan
     input: trace.input,
     path: trace.path,
     dryRun: trace.dryRun,
+    replayOf: trace.replayOf,
     status,
     model,
     latencyMs: Math.max(0, finishedAt - trace.startedAt),

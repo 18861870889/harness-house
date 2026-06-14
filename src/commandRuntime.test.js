@@ -63,4 +63,21 @@ describe("command runtime", () => {
       rejectedCount: 1,
     });
   });
+
+  it("preserves replay source in audit traces", () => {
+    const trace = createCommandTrace({
+      input: "停止播放音乐",
+      dryRun: true,
+      replayOf: "cmd_original",
+      now: () => 1000,
+    });
+    const audit = finishCommandTrace(trace, { status: "dry_run" }, () => 1010);
+
+    expect(audit).toMatchObject({
+      input: "停止播放音乐",
+      dryRun: true,
+      replayOf: "cmd_original",
+      status: "dry_run",
+    });
+  });
 });

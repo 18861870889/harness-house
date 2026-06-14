@@ -1,12 +1,18 @@
 export const LEARNING_MEMORY_VERSION = "0.1";
 
-export function createLearningMemory({ updatedAt = new Date().toISOString(), candidates = [], observations = [] } = {}) {
+export function createLearningMemory({
+  updatedAt = new Date().toISOString(),
+  candidates = [],
+  observations = [],
+  tombstones = [],
+} = {}) {
   return {
     version: LEARNING_MEMORY_VERSION,
     updatedAt,
     mode: "shadow",
     observations,
     candidates,
+    tombstones,
   };
 }
 
@@ -16,20 +22,53 @@ export function recordLearningObservation(memory, auditEntry, { updatedAt = new 
   if (!observation) return next;
 
   next.observations = [observation, ...next.observations].slice(0, 200);
-  next.candidates = deriveLearningCandidates(next.observations);
+  next.candidates = deriveLearningCandidates(next.observations, next.candidates, next.tombstones);
   next.updatedAt = updatedAt;
   return next;
 }
 
-export function deriveLearningCandidates(observations = []) {
+export function updateLearningCandidate(memory, candidateId, patch = {}, { updatedAt = new Date().toISOString() } = {}) {
+  const next = normalizeMemory(memory);
+  const candidate = next.candidates.find((item) => item.id === candidateId);
+  if (!candidate) throw new Error(`Learning candidate not found: ${candidateId}`);
+  const allowedStatuses = new Set(["shadow", "ignored"]);
+  if (patch.status && !allowedStatuses.has(patch.status)) {
+    throw new Error(`Unsupported learning candidate status: ${patch.status}`);
+  }
+  candidate.status = patch.status ?? candidate.status;
+  candidate.updatedAt = updatedAt;
+  candidate.note = typeof patch.note === "string" ? patch.note : candidate.note;
+  next.updatedAt = updatedAt;
+  return next;
+}
+
+export function deleteLearningCandidate(memory, candidateId, { updatedAt = new Date().toISOString() } = {}) {
+  const next = normalizeMemory(memory);
+  const candidate = next.candidates.find((item) => item.id === candidateId);
+  next.candidates = next.candidates.filter((item) => item.id !== candidateId);
+  if (candidate) {
+    next.tombstones = [
+      { id: candidate.id, commandKey: candidate.commandKey, deletedAt: updatedAt },
+      ...next.tombstones.filter((item) => item.id !== candidate.id),
+    ].slice(0, 100);
+  }
+  next.updatedAt = updatedAt;
+  return next;
+}
+
+export function deriveLearningCandidates(observations = [], existingCandidates = [], tombstones = []) {
   const groups = new Map();
+  const existingByKey = new Map(existingCandidates.map((candidate) => [candidate.commandKey, candidate]));
+  const tombstoneKeys = new Set(tombstones.map((item) => item.commandKey).filter(Boolean));
   for (const observation of observations) {
     if (!observation.success || observation.actions.length === 0) continue;
     const key = normalizeCommandKey(observation.input);
+    if (tombstoneKeys.has(key)) continue;
+    const existing = existingByKey.get(key);
     const current = groups.get(key) ?? {
       id: `candidate_${stableId(key)}`,
       type: inferCandidateType(observation.input),
-      status: "shadow",
+      status: existing?.status ?? "shadow",
       input: observation.input,
       commandKey: key,
       count: 0,
@@ -41,6 +80,8 @@ export function deriveLearningCandidates(observations = []) {
         autoApply: false,
         reason: "学习候选默认仅 shadow，不自动执行",
       },
+      note: existing?.note,
+      updatedAt: existing?.updatedAt,
     };
     current.count += 1;
     current.confidence = Math.min(0.95, 0.45 + current.count * 0.15);
@@ -63,7 +104,9 @@ export function summarizeLearningMemory(memory) {
     mode: normalized.mode,
     observationCount: normalized.observations.length,
     candidateCount: normalized.candidates.length,
-    topCandidates: normalized.candidates.slice(0, 5),
+    ignoredCount: normalized.candidates.filter((candidate) => candidate.status === "ignored").length,
+    topCandidates: normalized.candidates.filter((candidate) => candidate.status !== "ignored").slice(0, 5),
+    ignoredCandidates: normalized.candidates.filter((candidate) => candidate.status === "ignored").slice(0, 5),
   };
 }
 
@@ -95,6 +138,7 @@ function normalizeMemory(memory) {
     updatedAt: base.updatedAt,
     observations: Array.isArray(base.observations) ? base.observations : [],
     candidates: Array.isArray(base.candidates) ? base.candidates : [],
+    tombstones: Array.isArray(base.tombstones) ? base.tombstones : [],
   });
 }
 

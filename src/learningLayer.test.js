@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createLearningMemory,
+  deleteLearningCandidate,
   deriveLearningCandidates,
   recordLearningObservation,
   summarizeLearningMemory,
+  updateLearningCandidate,
 } from "./learningLayer.js";
 
 function auditEntry(input = "打开客厅灯") {
@@ -72,5 +74,47 @@ describe("learning layer", () => {
       observationCount: 1,
       candidateCount: 1,
     });
+  });
+
+  it("keeps ignored candidates out of top candidates", () => {
+    const observed = recordLearningObservation(createLearningMemory(), auditEntry("准备看电影"), {
+      updatedAt: "2026-06-14T00:00:00.000Z",
+    });
+    const ignored = updateLearningCandidate(
+      observed,
+      observed.candidates[0].id,
+      { status: "ignored", note: "too noisy" },
+      { updatedAt: "2026-06-14T00:01:00.000Z" },
+    );
+    const next = recordLearningObservation(ignored, auditEntry("准备看电影"), {
+      updatedAt: "2026-06-14T00:02:00.000Z",
+    });
+    const summary = summarizeLearningMemory(next);
+
+    expect(next.candidates[0]).toMatchObject({
+      status: "ignored",
+      note: "too noisy",
+      count: 2,
+    });
+    expect(summary.ignoredCount).toBe(1);
+    expect(summary.topCandidates).toHaveLength(0);
+  });
+
+  it("tombstones deleted candidates so history does not immediately recreate them", () => {
+    const observed = recordLearningObservation(createLearningMemory(), auditEntry("准备看电影"));
+    const deleted = deleteLearningCandidate(observed, observed.candidates[0].id, {
+      updatedAt: "2026-06-14T00:01:00.000Z",
+    });
+    const next = recordLearningObservation(deleted, auditEntry("准备看电影"), {
+      updatedAt: "2026-06-14T00:02:00.000Z",
+    });
+
+    expect(next.candidates).toHaveLength(0);
+    expect(next.tombstones).toEqual([
+      expect.objectContaining({
+        id: observed.candidates[0].id,
+        commandKey: observed.candidates[0].commandKey,
+      }),
+    ]);
   });
 });

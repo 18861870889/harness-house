@@ -23,10 +23,13 @@ import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
 import {
   applyDefaultRunPolicy,
+  deleteLearningCandidate,
   getCommandAudit,
   getHcmHome,
   getLearningMemory,
+  replayCommandAudit,
   runHcmCommand,
+  updateLearningCandidate,
   updateHcmThingOverride,
 } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
@@ -99,6 +102,7 @@ export default function App() {
   const [defaultRunSummary, setDefaultRunSummary] = useState(null);
   const [commandAudit, setCommandAudit] = useState([]);
   const [learningMemory, setLearningMemory] = useState(null);
+  const [intelligenceActionId, setIntelligenceActionId] = useState(null);
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -194,6 +198,103 @@ export default function App() {
       }
     },
     [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
+  );
+
+  const replayAuditEntry = useCallback(
+    async (entry) => {
+      if (!entry?.commandId || intelligenceActionId) return;
+      setIntelligenceActionId(`replay:${entry.commandId}`);
+      try {
+        const result = await replayCommandAudit({
+          commandId: entry.commandId,
+          currentRoomId,
+          selectedRoomId,
+        });
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "info",
+            text: `Dry-run 回放：${entry.input} -> ${result.status}，计划 ${result.plan?.actions?.length ?? 0} 个动作`,
+          },
+          ...current,
+        ]);
+        setMessages((current) => [
+          ...current,
+          makeMessage("assistant", `已完成 dry-run 回放：${result.plan?.summary ?? entry.input}`, {
+            path: "hcm-replay",
+            latency: result.latencyMs,
+            planId: result.commandId,
+          }),
+        ]);
+        await refreshIntelligence();
+      } catch (error) {
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "cancel",
+            text: `Dry-run 回放失败：${error.message}`,
+          },
+          ...current,
+        ]);
+      } finally {
+        setIntelligenceActionId(null);
+      }
+    },
+    [currentRoomId, intelligenceActionId, refreshIntelligence, selectedRoomId],
+  );
+
+  const ignoreLearningCandidate = useCallback(
+    async (candidate) => {
+      if (!candidate?.id || intelligenceActionId) return;
+      setIntelligenceActionId(`ignore:${candidate.id}`);
+      try {
+        const memory = await updateLearningCandidate({
+          candidateId: candidate.id,
+          status: "ignored",
+          note: "用户在 Learning 面板忽略",
+        });
+        setLearningMemory(memory);
+      } catch (error) {
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "cancel",
+            text: `学习候选更新失败：${error.message}`,
+          },
+          ...current,
+        ]);
+      } finally {
+        setIntelligenceActionId(null);
+      }
+    },
+    [intelligenceActionId],
+  );
+
+  const deleteLearningCandidateFromMemory = useCallback(
+    async (candidate) => {
+      if (!candidate?.id || intelligenceActionId) return;
+      setIntelligenceActionId(`delete:${candidate.id}`);
+      try {
+        const memory = await deleteLearningCandidate({ candidateId: candidate.id });
+        setLearningMemory(memory);
+      } catch (error) {
+        setLogs((current) => [
+          {
+            id: crypto.randomUUID(),
+            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+            level: "cancel",
+            text: `学习候选删除失败：${error.message}`,
+          },
+          ...current,
+        ]);
+      } finally {
+        setIntelligenceActionId(null);
+      }
+    },
+    [intelligenceActionId],
   );
 
   async function submitCommand(raw = input) {
@@ -462,7 +563,15 @@ export default function App() {
         />
         <PendingPlan plan={pendingPlan} onConfirm={confirmPending} onCancel={cancelPending} />
         <PlanPreview plan={lastPlan} />
-        <IntelligencePanel audit={commandAudit} memory={learningMemory} onRefresh={refreshIntelligence} />
+        <IntelligencePanel
+          audit={commandAudit}
+          memory={learningMemory}
+          actionId={intelligenceActionId}
+          onRefresh={refreshIntelligence}
+          onReplay={replayAuditEntry}
+          onIgnoreCandidate={ignoreLearningCandidate}
+          onDeleteCandidate={deleteLearningCandidateFromMemory}
+        />
         <SensorSimulator devices={devices} onToggle={toggleDeviceSensor} />
         <AuditLog logs={logs} />
       </aside>
@@ -912,7 +1021,7 @@ function PlanPreview({ plan }) {
   );
 }
 
-function IntelligencePanel({ audit, memory, onRefresh }) {
+function IntelligencePanel({ audit, memory, actionId, onRefresh, onReplay, onIgnoreCandidate, onDeleteCandidate }) {
   const candidates = memory?.topCandidates ?? [];
   return (
     <section className="panel intelligence-panel">
@@ -926,6 +1035,7 @@ function IntelligencePanel({ audit, memory, onRefresh }) {
       <div className="learning-metrics">
         <Metric label="审计" value={`${audit.length}`} />
         <Metric label="候选" value={`${memory?.candidateCount ?? 0}`} />
+        <Metric label="忽略" value={`${memory?.ignoredCount ?? 0}`} />
       </div>
       <div className="learning-list">
         {candidates.length === 0 ? (
@@ -933,11 +1043,31 @@ function IntelligencePanel({ audit, memory, onRefresh }) {
         ) : (
           candidates.slice(0, 3).map((candidate) => (
             <div className="learning-candidate" key={candidate.id}>
-              <span>{candidate.type}</span>
-              <strong>{candidate.input}</strong>
-              <small>
-                {candidate.count}x · {Math.round(candidate.confidence * 100)}%
-              </small>
+              <div>
+                <span>{candidate.type}</span>
+                <strong>{candidate.input}</strong>
+                <small>
+                  {candidate.count}x · {Math.round(candidate.confidence * 100)}%
+                </small>
+              </div>
+              <div className="candidate-actions">
+                <button
+                  type="button"
+                  disabled={Boolean(actionId)}
+                  onClick={() => onIgnoreCandidate(candidate)}
+                  title="忽略这个学习候选"
+                >
+                  忽略
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(actionId)}
+                  onClick={() => onDeleteCandidate(candidate)}
+                  title="删除并阻止它从历史观察中立刻重建"
+                >
+                  <X size={11} />
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -945,9 +1075,20 @@ function IntelligencePanel({ audit, memory, onRefresh }) {
       <div className="audit-mini-list">
         {audit.slice(0, 3).map((entry) => (
           <div className={`audit-mini-item ${entry.status}`} key={entry.commandId}>
-            <span>{entry.status}</span>
-            <strong>{entry.input}</strong>
-            <small>{entry.latencyMs}ms</small>
+            <div>
+              <span>{entry.status}</span>
+              <strong>{entry.input}</strong>
+              <small>{entry.latencyMs}ms</small>
+            </div>
+            <button
+              type="button"
+              disabled={Boolean(actionId)}
+              onClick={() => onReplay(entry)}
+              title="以 dry-run 模式回放该命令"
+            >
+              <Play size={11} />
+              回放
+            </button>
           </div>
         ))}
       </div>

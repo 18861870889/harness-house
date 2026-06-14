@@ -74,12 +74,52 @@ export async function getCommandAudit({ limit = 8 } = {}) {
   return payload;
 }
 
+export async function replayCommandAudit({ commandId, currentRoomId, selectedRoomId }) {
+  const response = await fetch("/api/commands/replay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commandId, currentRoomId, selectedRoomId }),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Command replay request failed ${response.status}`);
+  }
+  return payload;
+}
+
 export async function getLearningMemory() {
   const response = await fetch("/api/learning/memory");
   const text = await response.text();
   const payload = text ? JSON.parse(text) : {};
   if (!response.ok) {
     throw new Error(payload.error || `Learning memory request failed ${response.status}`);
+  }
+  return payload;
+}
+
+export async function updateLearningCandidate({ candidateId, status, note }) {
+  const response = await fetch(`/api/learning/candidates/${encodeURIComponent(candidateId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, note }),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Learning candidate update failed ${response.status}`);
+  }
+  return payload;
+}
+
+export async function deleteLearningCandidate({ candidateId }) {
+  const response = await fetch(`/api/learning/candidates/${encodeURIComponent(candidateId)}`, {
+    method: "DELETE",
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Learning candidate delete failed ${response.status}`);
   }
   return payload;
 }
