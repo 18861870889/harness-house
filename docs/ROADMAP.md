@@ -2,6 +2,13 @@
 
 > 目标：把当前本地 3D 智能家居 MVP 演进成可接入真实设备、可理解设备能力边界、可安全执行、可持续自学习的开源 AI smart-home runtime。
 
+工程执行方法见：
+
+- [ENGINEERING_PLAYBOOK.md](ENGINEERING_PLAYBOOK.md)
+- [DEVICE_ADAPTER_CONTRACT.md](DEVICE_ADAPTER_CONTRACT.md)
+- [TESTING_POLICY.md](TESTING_POLICY.md)
+- [VERSION_WORKFLOW.md](VERSION_WORKFLOW.md)
+
 ## 1. 产品演进原则
 
 Harness House 不应该直接变成“又一个 Home Assistant 面板”。它的核心价值是：

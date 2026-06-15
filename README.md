@@ -143,6 +143,23 @@ Ambiguous `switch.*` entities are intentionally blocked from automatic real cont
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the planned version cadence from the local simulator MVP to real device adapters, capability boundaries, safety gates, learning layer, and multi-agent runtime.
 
+## Engineering Workflow
+
+Harness House follows a lightweight agentic engineering workflow inspired by Superpowers:
+
+- HCM-first device modeling
+- simulator-first debugging
+- read-only provider verification
+- safety-gated real execution
+- contract tests for adapter behavior
+
+See:
+
+- [docs/ENGINEERING_PLAYBOOK.md](docs/ENGINEERING_PLAYBOOK.md)
+- [docs/DEVICE_ADAPTER_CONTRACT.md](docs/DEVICE_ADAPTER_CONTRACT.md)
+- [docs/TESTING_POLICY.md](docs/TESTING_POLICY.md)
+- [docs/VERSION_WORKFLOW.md](docs/VERSION_WORKFLOW.md)
+
 ## License
 
 MIT License
