@@ -77,9 +77,24 @@ function summarizePlan(plan) {
     id: plan.id,
     kind: plan.kind,
     intent: plan.intent,
+    intentType: plan.intentType,
     confidence: plan.confidence,
     summary: plan.summary,
     actionCount: plan.actions?.length ?? plan.steps?.length ?? 0,
+    stateQuery: plan.stateQuery
+      ? {
+          thingId: plan.stateQuery.thingId,
+          thingName: plan.stateQuery.thingName,
+          roomId: plan.stateQuery.roomId,
+        }
+      : null,
+    resolution: plan.resolution
+      ? {
+          type: plan.resolution.type,
+          targetStatus: plan.resolution.targetResolution?.status,
+          capabilityStatus: plan.resolution.capabilityResolution?.status,
+        }
+      : null,
     rejected: plan.rejected ?? [],
   };
 }

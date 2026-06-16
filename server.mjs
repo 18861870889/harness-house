@@ -522,7 +522,13 @@ async function runHcmCommandPipeline(payload) {
       { summarize: (draft) => ({ intent: draft.intent, actionCount: draft.actions?.length ?? 0 }) },
     );
     const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
-      summarize: (plan) => ({ intent: plan.intent, actionCount: plan.actions.length, needsConfirmation: plan.needsConfirmation }),
+      summarize: (plan) => ({
+        intent: plan.intent,
+        intentType: plan.intentType,
+        actionCount: plan.actions.length,
+        stateQuery: plan.stateQuery?.thingName,
+        needsConfirmation: plan.needsConfirmation,
+      }),
     });
     const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
       summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
@@ -535,7 +541,9 @@ async function runHcmCommandPipeline(payload) {
       results: [],
     };
 
-    if (plan.actions.length === 0) {
+    if (plan.kind === "hcm_state_query") {
+      execution.status = "answered";
+    } else if (plan.actions.length === 0) {
       execution.status = "no_action";
     } else if (plan.needsConfirmation) {
       execution.status = "needs_confirmation";
@@ -577,6 +585,7 @@ async function runHcmCommandPipeline(payload) {
       plan,
       execution,
       planner,
+      resolution: plan.resolution,
       trace: auditEntry,
     };
   } catch (error) {
@@ -680,7 +689,9 @@ async function callHcmPlannerModel(payload) {
   const data = JSON.parse(text);
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("Model returned no content");
-  return parseJsonContent(content);
+  const draft = parseJsonContent(content);
+  validatePlannerDraft(draft);
+  return draft;
 }
 
 async function executeHcmServiceCalls(accepted) {

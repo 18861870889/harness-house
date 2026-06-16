@@ -22,7 +22,6 @@ import {
 import ThreeHouse from "./ThreeHouse.jsx";
 import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
-import { answerHcmStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
 import {
   applyDefaultRunPolicy,
   deleteLearningCandidate,
@@ -70,7 +69,7 @@ function latencyClass(latency) {
 
 function canUseRealHcmCommand(home, llmStatus) {
   return Boolean(
-    home?.stats?.autoExecutableCapabilities > 0 &&
+    home?.things?.length > 0 &&
       llmStatus?.configured &&
       llmStatus?.mode === "real",
   );
@@ -320,61 +319,6 @@ export default function App() {
     setMessages((current) => [...current, makeMessage("user", command)]);
     setProcessing(true);
 
-    if (looksLikeStateQuery(command) && hcmHome) {
-      try {
-        const latestHome = await getHcmHome();
-        setHcmHome(latestHome);
-        const answer = answerHcmStateQuery(command, latestHome);
-        if (answer) {
-          const latency = 120;
-          setLastPlan({
-            id: crypto.randomUUID(),
-            kind: "state_query",
-            path: answer.path,
-            intent: "query_device_state",
-            confidence: 0.95,
-            summary: answer.summary,
-            steps: [],
-            commandResult: {
-              commandId: crypto.randomUUID(),
-              status: "answered",
-              path: answer.path,
-              latencyMs: latency,
-              stages: [{ name: "hcm_state_query", latencyMs: latency, mode: "read_only" }],
-            },
-          });
-          setMessages((current) => [
-            ...current,
-            makeMessage("assistant", answer.summary, {
-              path: answer.path,
-              latency,
-            }),
-          ]);
-          setLogs((current) => [
-            {
-              id: crypto.randomUUID(),
-              time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-              level: "info",
-              text: `读取状态：${answer.thingName}`,
-            },
-            ...current,
-          ]);
-          setProcessing(false);
-          return;
-        }
-      } catch (error) {
-        setLogs((current) => [
-          {
-            id: crypto.randomUUID(),
-            time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-            level: "info",
-            text: `HCM 状态读取失败，继续走本地链路：${error.message}`,
-          },
-          ...current,
-        ]);
-      }
-    }
-
     if (canUseRealHcmCommand(hcmHome, llmStatus)) {
       try {
         const realResult = await runHcmCommand({
@@ -382,7 +326,12 @@ export default function App() {
           currentRoomId,
           selectedRoomId,
         });
-        if (realResult.plan?.actions?.length > 0 || ["executed", "partial_failure", "rejected"].includes(realResult.status)) {
+        if (
+          realResult.plan?.actions?.length > 0 ||
+          ["answered", "executed", "partial_failure", "rejected", "needs_confirmation", "dry_run", "no_action"].includes(
+            realResult.status,
+          )
+        ) {
           handleRealCommandResult(realResult);
           setProcessing(false);
           return;
@@ -464,13 +413,17 @@ export default function App() {
     const failCount = result.execution?.results?.filter((item) => !item.ok).length ?? 0;
     const accepted = result.execution?.accepted ?? [];
     const logText =
-      result.status === "executed"
-        ? `真实设备已执行：${accepted.map((item) => `${item.thingName} ${item.capabilityName}`).join("；")}`
-        : result.status === "partial_failure"
-          ? `真实设备部分执行：成功 ${okCount}，失败 ${failCount}`
-          : result.status === "rejected"
-            ? `真实设备计划被拒绝：${result.execution?.rejected?.map((item) => item.message).join("；")}`
-            : result.plan?.summary ?? "真实设备计划已生成。";
+      result.status === "answered"
+        ? result.plan?.stateQuery?.summary || result.plan?.summary || "状态已读取。"
+        : result.status === "no_action"
+          ? result.plan?.summary || "没有找到可执行动作。"
+          : result.status === "executed"
+            ? `真实设备已执行：${accepted.map((item) => `${item.thingName} ${item.capabilityName}`).join("；")}`
+            : result.status === "partial_failure"
+              ? `真实设备部分执行：成功 ${okCount}，失败 ${failCount}`
+              : result.status === "rejected"
+                ? `真实设备计划被拒绝：${result.execution?.rejected?.map((item) => item.message).join("；")}`
+                : result.plan?.summary ?? "真实设备计划已生成。";
 
     setLastPlan({
       id: result.commandId,
@@ -479,6 +432,7 @@ export default function App() {
       intent: result.plan?.intent ?? "real_hcm",
       confidence: result.plan?.confidence ?? 0.6,
       summary: result.plan?.summary ?? logText,
+      resolution: result.resolution,
       steps: accepted.map((item) => ({
         id: `${item.thingId}:${item.capabilityId}`,
         deviceId: item.thingId,
@@ -503,7 +457,7 @@ export default function App() {
       {
         id: crypto.randomUUID(),
         time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-        level: result.status === "executed" ? "success" : "info",
+        level: result.status === "executed" || result.status === "answered" ? "success" : "info",
         text: logText,
       },
       ...current,

@@ -43,6 +43,20 @@ export function answerHcmStateQuery(input, home) {
   };
 }
 
+export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
+  const thing = home?.things?.find((item) => item.id === thingId);
+  if (!thing) return null;
+  const roomName = preferredRoomName(normalize(input), home, thing);
+  return {
+    path: "hcm-state-llm",
+    thingId: thing.id,
+    thingName: thing.name,
+    roomId: thing.spaceId,
+    reason,
+    summary: formatThingState(thing, roomName),
+  };
+}
+
 export function looksLikeStateQuery(text) {
   if (!text) return false;
   if (/打开|开启|启动|关闭|关掉|调到|设置|播放|停止/.test(text)) return false;
