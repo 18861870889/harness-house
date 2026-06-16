@@ -1,3 +1,9 @@
+import {
+  compressReviewToDeviceBoundaries,
+  summarizeHomeCapabilities,
+  summarizeThingCapabilities,
+} from "./hcmCapabilityCompression.js";
+
 export const HCM_VERSION = "0.1";
 
 export const CAPABILITY_KINDS = {
@@ -29,7 +35,8 @@ export function createHcmHome({
     provider: provider ?? { id: "unknown", name: "Unknown Provider" },
     syncedAt,
     stats: summarizeHcm(normalizedThings, unresolvedBindings),
-    review: summarizeBindingReview(unresolvedBindings),
+    capabilitySummary: summarizeHomeCapabilities(normalizedThings),
+    review: summarizeBindingReview(unresolvedBindings, normalizedThings),
     spaces: normalizedSpaces,
     things: normalizedThings,
     unresolvedBindings,
@@ -47,7 +54,7 @@ export function normalizeSpace(space) {
 
 export function normalizeThing(thing) {
   const capabilities = Array.isArray(thing.capabilities) ? thing.capabilities.map(normalizeCapability) : [];
-  return {
+  const normalized = {
     id: stableId(thing.id || thing.name || "unknown_thing"),
     name: thing.name || "未命名设备",
     type: thing.type || "generic",
@@ -58,6 +65,10 @@ export function normalizeThing(thing) {
     provider: thing.provider ?? null,
     capabilities,
     state: thing.state ?? {},
+  };
+  return {
+    ...normalized,
+    boundary: summarizeThingCapabilities(normalized),
   };
 }
 
@@ -115,7 +126,7 @@ export function summarizeHcm(things, unresolvedBindings = []) {
   };
 }
 
-export function summarizeBindingReview(unresolvedBindings = []) {
+export function summarizeBindingReview(unresolvedBindings = [], things = []) {
   const byRisk = {};
   const byKind = {};
   const byReason = {};
@@ -144,6 +155,7 @@ export function summarizeBindingReview(unresolvedBindings = []) {
     byThingType,
     topReasons: sortedReasons.slice(0, 6),
     recommendations: summarizeBindingRecommendations(unresolvedBindings),
+    deviceBoundaries: compressReviewToDeviceBoundaries(things, unresolvedBindings),
     samples: unresolvedBindings.slice(0, 8),
   };
 }

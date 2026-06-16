@@ -98,6 +98,7 @@ export function deriveLearningCandidates(observations = [], existingCandidates =
 
 export function summarizeLearningMemory(memory) {
   const normalized = normalizeMemory(memory);
+  const correctionCandidates = deriveCorrectionCandidates(normalized.observations);
   return {
     version: normalized.version,
     updatedAt: normalized.updatedAt,
@@ -107,7 +108,38 @@ export function summarizeLearningMemory(memory) {
     ignoredCount: normalized.candidates.filter((candidate) => candidate.status === "ignored").length,
     topCandidates: normalized.candidates.filter((candidate) => candidate.status !== "ignored").slice(0, 5),
     ignoredCandidates: normalized.candidates.filter((candidate) => candidate.status === "ignored").slice(0, 5),
+    correctionCandidates,
   };
+}
+
+export function deriveCorrectionCandidates(observations = []) {
+  const groups = new Map();
+  for (const observation of observations) {
+    if (!["no_action", "rejected", "partial_failure", "error"].includes(observation.status)) continue;
+    const key = normalizeCommandKey(observation.input);
+    const current = groups.get(key) ?? {
+      id: `correction_${stableId(key)}`,
+      type: "correction_needed",
+      status: "shadow",
+      input: observation.input,
+      commandKey: key,
+      count: 0,
+      confidence: 0,
+      reason: inferCorrectionReason(observation),
+      examples: [],
+      safety: {
+        autoApply: false,
+        reason: "纠错候选只提示需要补充语义或映射，不自动执行",
+      },
+    };
+    current.count += 1;
+    current.confidence = Math.min(0.9, 0.35 + current.count * 0.2);
+    current.examples = [observation.input, ...current.examples.filter((item) => item !== observation.input)].slice(0, 3);
+    groups.set(key, current);
+  }
+  return Array.from(groups.values())
+    .sort((first, second) => second.confidence - first.confidence || second.count - first.count)
+    .slice(0, 5);
 }
 
 function createObservation(auditEntry, observedAt) {
@@ -129,7 +161,16 @@ function createObservation(auditEntry, observedAt) {
     success,
     actions,
     safety: auditEntry.safety,
+    explanation: auditEntry.explanation?.summary,
+    rejected: auditEntry.execution?.rejectedCount ?? auditEntry.safety?.rejectedCount ?? 0,
   };
+}
+
+function inferCorrectionReason(observation) {
+  if (observation.status === "no_action") return "没有找到可执行设备或能力，可能需要补充家庭语义/设备映射";
+  if (observation.status === "rejected") return "安全门拒绝执行，可能需要确认风险边界或设备能力";
+  if (observation.status === "partial_failure") return "部分设备执行失败，可能需要检查 provider service 支持";
+  return "命令失败，需要诊断意图、设备或 adapter 映射";
 }
 
 function normalizeMemory(memory) {

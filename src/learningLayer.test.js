@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLearningMemory,
   deleteLearningCandidate,
+  deriveCorrectionCandidates,
   deriveLearningCandidates,
   recordLearningObservation,
   summarizeLearningMemory,
@@ -26,6 +27,21 @@ function auditEntry(input = "打开客厅灯") {
       ],
     },
     safety: { level: "low", confirmationRequired: false },
+  };
+}
+
+function failedAuditEntry(input = "我要晾衣服", status = "no_action") {
+  return {
+    commandId: crypto.randomUUID(),
+    input,
+    path: "hcm-real",
+    status,
+    execution: {
+      services: [],
+      rejectedCount: status === "rejected" ? 1 : 0,
+    },
+    safety: { level: "low", confirmationRequired: false, rejectedCount: status === "rejected" ? 1 : 0 },
+    explanation: { summary: "没有找到可执行设备或能力" },
   };
 }
 
@@ -116,5 +132,36 @@ describe("learning layer", () => {
         commandKey: observed.candidates[0].commandKey,
       }),
     ]);
+  });
+
+  it("creates shadow correction candidates from no-action or rejected commands", () => {
+    const memory = recordLearningObservation(createLearningMemory(), failedAuditEntry("我要晾衣服"), {
+      updatedAt: "2026-06-14T00:00:00.000Z",
+    });
+    const summary = summarizeLearningMemory(memory);
+
+    expect(memory.candidates).toHaveLength(0);
+    expect(summary.correctionCandidates).toEqual([
+      expect.objectContaining({
+        type: "correction_needed",
+        input: "我要晾衣服",
+        reason: "没有找到可执行设备或能力，可能需要补充家庭语义/设备映射",
+        safety: expect.objectContaining({ autoApply: false }),
+      }),
+    ]);
+  });
+
+  it("groups repeated correction candidates by normalized command", () => {
+    const candidates = deriveCorrectionCandidates([
+      { input: "请帮我晾衣服", status: "no_action" },
+      { input: "晾衣服", status: "no_action" },
+      { input: "打开客厅灯", status: "executed" },
+    ]);
+
+    expect(candidates[0]).toMatchObject({
+      count: 2,
+      confidence: 0.75,
+      commandKey: "晾衣服",
+    });
   });
 });

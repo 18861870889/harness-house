@@ -761,6 +761,57 @@ button {
   color: var(--muted);
 }
 
+.capability-boundary-summary {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.44);
+}
+
+.boundary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.boundary-header strong {
+  color: var(--cyan);
+}
+
+.boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.boundary-grid span {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.boundary-grid strong {
+  color: var(--text);
+}
+
+.capability-boundary-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .review-reasons,
 .review-samples {
   display: flex;
@@ -1020,6 +1071,7 @@ button {
 }
 
 .learning-list,
+.correction-list,
 .audit-mini-list {
   display: flex;
   flex-direction: column;
@@ -1036,7 +1088,22 @@ button {
   background: rgba(15, 23, 42, 0.42);
 }
 
+.correction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.correction-header strong {
+  color: var(--amber);
+}
+
 .learning-candidate,
+.correction-candidate,
 .audit-mini-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1049,6 +1116,11 @@ button {
   background: rgba(15, 23, 42, 0.48);
 }
 
+.correction-candidate {
+  grid-template-columns: minmax(0, 1fr);
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
 .learning-candidate > div:first-child,
 .audit-mini-item > div:first-child {
   display: grid;
@@ -1057,6 +1129,7 @@ button {
 }
 
 .learning-candidate span,
+.correction-candidate span,
 .audit-mini-item span {
   color: var(--muted);
   font-size: 10px;
@@ -1066,12 +1139,20 @@ button {
 
 .learning-candidate strong,
 .audit-mini-item strong,
+.correction-candidate small,
 .learning-candidate small,
 .audit-mini-item small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.correction-candidate small {
+  color: var(--amber);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .learning-candidate strong,

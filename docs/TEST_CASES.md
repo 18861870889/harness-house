@@ -43,14 +43,26 @@
 - Intent explainer 必须输出目标设备、能力、service、家庭语义和安全判断。
 - 状态查询解释必须明确“只读状态查询，不执行设备动作”。
 
-## 5. 自动化测试入口
+## 5. Capability Compression 与反馈闭环
+
+必须覆盖：
+
+- 每个 HCM thing 会压缩出设备级能力边界：可自动、需确认、只读、保护、配置。
+- 全屋能力摘要不暴露原始 HA entity 噪声，只显示可执行/确认/只读/保护的总量和设备面。
+- Review Queue 能压缩成设备级 review surfaces。
+- `no_action` / `rejected` / `partial_failure` 进入 shadow correction candidates。
+- correction candidates 不会自动变成 personal semantics 或 executable actions。
+
+## 6. 自动化测试入口
 
 核心场景 benchmark 位于：
 
 - `src/harnessScenario.fixture.js`
 - `src/hcmIntentBenchmark.test.js`
+- `src/hcmCapabilityCompression.test.js`
 - `src/personalSemantics.test.js`
 - `src/intentExplainer.test.js`
+- `src/learningLayer.test.js`
 
 必须运行：
 

@@ -774,8 +774,10 @@ function HcmCatalog({
               <span>保护 {defaultPolicy.protected}</span>
             </div>
           )}
+          <CapabilityBoundarySummary summary={home.capabilitySummary} />
           <BindingReview
             review={home.review}
+            reviewSurfaceCount={home.capabilitySummary?.reviewSurfaceCount}
             onHideThing={onHideThing}
             actionId={reviewActionId}
           />
@@ -785,7 +787,7 @@ function HcmCatalog({
                 <span>{thing.type}</span>
                 <strong>{thing.name}</strong>
                 <small>
-                  {thing.state.autoExecutable}/{executableCapabilityCount(thing)} auto
+                  {thing.boundary?.label ?? `${thing.state.autoExecutable}/${executableCapabilityCount(thing)} auto`}
                 </small>
               </div>
             ))}
@@ -796,12 +798,44 @@ function HcmCatalog({
   );
 }
 
+function CapabilityBoundarySummary({ summary }) {
+  if (!summary) return null;
+  const totals = summary.totals ?? {};
+  const deviceStates = summary.deviceStates ?? {};
+  return (
+    <div className="capability-boundary-summary">
+      <div className="boundary-header">
+        <span>能力边界</span>
+        <strong>{summary.reviewSurfaceCount ?? 0}</strong>
+      </div>
+      <div className="boundary-grid">
+        <span>
+          可自动 <strong>{totals.executable ?? 0}</strong>
+        </span>
+        <span>
+          需确认 <strong>{totals.confirmable ?? 0}</strong>
+        </span>
+        <span>
+          只读 <strong>{totals.readOnly ?? 0}</strong>
+        </span>
+        <span>
+          保护 <strong>{(totals.protected ?? 0) + (totals.config ?? 0)}</strong>
+        </span>
+      </div>
+      <small>
+        设备：自动 {deviceStates.executable ?? 0} · 确认 {deviceStates.confirmable ?? 0} · 保护{" "}
+        {deviceStates.protected ?? 0} · 只读 {deviceStates.read_only ?? 0}
+      </small>
+    </div>
+  );
+}
+
 function executableCapabilityCount(thing) {
   return (thing.capabilities ?? []).filter((capability) => capability.kind === "control" || capability.kind === "action")
     .length;
 }
 
-function BindingReview({ review, onHideThing, actionId }) {
+function BindingReview({ review, reviewSurfaceCount, onHideThing, actionId }) {
   if (!review || review.total === 0) return null;
   const recommendations = review.recommendations ?? { totalDevices: 0, bySeverity: {}, devices: [] };
   const severityItems = Object.entries(recommendations.bySeverity ?? {}).sort(
@@ -812,7 +846,7 @@ function BindingReview({ review, onHideThing, actionId }) {
     <div className="binding-review">
       <div className="review-header">
         <span>Review Queue</span>
-        <strong>{recommendations.totalDevices}</strong>
+        <strong>{reviewSurfaceCount ?? recommendations.totalDevices}</strong>
       </div>
       <div className="review-risk-strip">
         {severityItems.map(([severity, count]) => (
@@ -832,7 +866,12 @@ function BindingReview({ review, onHideThing, actionId }) {
           </div>
         ))}
       </div>
-      <AdjustmentRecommendations recommendations={recommendations} onHideThing={onHideThing} actionId={actionId} />
+      <AdjustmentRecommendations
+        recommendations={recommendations}
+        displayCount={reviewSurfaceCount}
+        onHideThing={onHideThing}
+        actionId={actionId}
+      />
     </div>
   );
 }
@@ -844,7 +883,7 @@ function severityRank(severity) {
   return 0;
 }
 
-function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {
+function AdjustmentRecommendations({ recommendations, displayCount, onHideThing, actionId }) {
   const devices = recommendations?.devices ?? [];
   if (devices.length === 0) return null;
 
@@ -852,7 +891,7 @@ function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {
     <div className="adjustment-recommendations">
       <div className="recommendation-header">
         <span>建议调整</span>
-        <strong>{recommendations.totalDevices}</strong>
+        <strong>{displayCount ?? recommendations.totalDevices}</strong>
       </div>
       {devices.slice(0, 4).map((device) => (
         <div className={`recommendation-item severity-${device.severity}`} key={device.thingId || device.thingName}>
@@ -1065,6 +1104,7 @@ function PlanPreview({ plan }) {
 
 function IntelligencePanel({ audit, memory, actionId, onRefresh, onReplay, onIgnoreCandidate, onDeleteCandidate }) {
   const candidates = memory?.topCandidates ?? [];
+  const corrections = memory?.correctionCandidates ?? [];
   return (
     <section className="panel intelligence-panel">
       <div className="panel-title">
@@ -1114,6 +1154,20 @@ function IntelligencePanel({ audit, memory, actionId, onRefresh, onReplay, onIgn
           ))
         )}
       </div>
+      {corrections.length > 0 && (
+        <div className="correction-list">
+          <div className="correction-header">
+            <span>需要纠错</span>
+            <strong>{corrections.length}</strong>
+          </div>
+          {corrections.slice(0, 3).map((candidate) => (
+            <div className="correction-candidate" key={candidate.id}>
+              <span>{candidate.input}</span>
+              <small>{candidate.reason}</small>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="audit-mini-list">
         {audit.slice(0, 3).map((entry) => (
           <div className={`audit-mini-item ${entry.status}`} key={entry.commandId}>

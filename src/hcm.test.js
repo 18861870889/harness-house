@@ -65,6 +65,16 @@ describe("harness capability model", () => {
       total: 1,
       byRisk: { medium: 1 },
     });
+    expect(home.capabilitySummary).toMatchObject({
+      totals: {
+        executable: 0,
+        confirmable: 0,
+        readOnly: 0,
+        protected: 0,
+        config: 0,
+      },
+      reviewSurfaceCount: 0,
+    });
   });
 
   it("recommends device-level adjustments instead of per-entity review noise", () => {

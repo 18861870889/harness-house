@@ -416,7 +416,7 @@ switch.xiaomi_123
 
 ### v0.7 - Intent Precision & Explainability
 
-状态：进行中。
+状态：已完成当前版本范围。
 
 目标：
 
@@ -427,7 +427,9 @@ switch.xiaomi_123
 - LLM-first HCM intent resolution。
 - Personal Semantics：把家庭语言作为 planner hints，例如 `晾衣服 -> 阳台晾衣杆`、`小爱音箱 -> 小爱音箱Pro`。
 - Intent Dry-run Explainer：解释“我理解为、目标设备、执行能力、将调用 service、安全判断”。
+- Capability Compression：把底层 capability 压缩为设备级边界摘要：可自动、需确认、只读、保护/配置。
 - 场景级 benchmark：覆盖状态查询、单设备控制、场景意图、越权拒绝、模型噪声。
+- Correction Feedback Loop：`no_action`、`rejected`、`partial_failure` 会生成 shadow correction candidates，不自动执行。
 
 验收：
 
@@ -435,6 +437,8 @@ switch.xiaomi_123
 - Personal semantics 不直接执行，只影响 planner hints 和解释证据。
 - Sensor/config/privacy/gas 等能力不能被模型放进 executable actions。
 - 每条真实 HCM 结果都能解释目标、能力、service 和安全原因。
+- Home Model 面板能展示设备级能力边界，Review Queue 以设备级建议为主。
+- 纠错候选只提示补充语义或映射，不会绕过安全门。
 - `npm test` 覆盖家庭场景 benchmark，错误执行率保持 0。
 
 ### v0.8 - HA Service Simulation & Debug Safety
