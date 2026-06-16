@@ -1,0 +1,48 @@
+# Harness House Test Cases
+
+> 目标：验证“所有真实 HCM 指令先经过大模型意图解析，再由本地 HCM / safety / executor 生成精确控制指令”。
+
+## 1. 测试原则
+
+- 自动化测试默认不控制真实 Home Assistant 设备。
+- LLM 输出只作为 draft；必须经过 HCM normalize、safety gate 和 executor 编译。
+- 任何不存在的设备、未声明能力、只读 sensor、高风险/隐私/配置能力都不能执行。
+- 状态查询必须先由 LLM 选中 HCM thing，再由本地读取状态，不能让模型编造状态。
+- 控制指令必须输出确定性 provider service，例如 `media_player.media_pause`。
+
+## 2. 场景级覆盖
+
+| 用户输入 | 期望意图 | 目标 | 期望结果 |
+| --- | --- | --- | --- |
+| 玄关人体目前是什么状态 | `state_query` | 入户传感器 | 本地读取 HCM 状态并回答 |
+| 小爱音箱停止播放音乐 | `device_control` | 小爱音箱Pro | 编译为 `media_player.media_pause` |
+| 我要晾衣服 | `scene` | 阳台晾衣杆 | 编译为 `cover.set_cover_position(position=100)` |
+| 准备看电影 | `scene` | 客厅电视/窗帘/灯 | 编译为电视开、窗帘位置、灯光亮度 |
+| 主卧空调调到 26 度 | `device_control` | 主卧空调 | 编译为 `climate.set_temperature(26)` |
+| 打开猫猫监控 | `device_control` | 猫猫监控 | 隐私能力阻断 |
+| 打开燃气热水器 | `device_control` | 燃气热水器 | 高风险能力阻断 |
+| 打开地下室灯 | `device_control` | 不存在设备 | 拒绝，不编造设备 |
+| 让玄关人体变成有人 | `device_control` | 入户传感器 | sensor 只读，拒绝执行 |
+
+## 3. 模型输出噪声
+
+必须覆盖：
+
+- 模型同时输出 `query` 和有效 `actions` 时，以 actions 作为控制计划。
+- 模型输出 sensor capability 到 `actions` 时，normalize 阶段拒绝。
+- 模型输出不存在的 `device_id` 或 `capability` 时，normalize 阶段拒绝。
+- 模型 summary 可以使用，但执行依据只能来自 HCM ids。
+
+## 4. 自动化测试入口
+
+核心场景 benchmark 位于：
+
+- `src/harnessScenario.fixture.js`
+- `src/hcmIntentBenchmark.test.js`
+
+必须运行：
+
+```bash
+npm test
+npm run build
+```

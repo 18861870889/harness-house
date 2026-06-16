@@ -21,6 +21,8 @@ Manual Real-device Tests
   User-authorized only
 ```
 
+场景级 benchmark 见 [TEST_CASES.md](TEST_CASES.md)。
+
 ## 2. 默认禁止
 
 自动化测试、Codex 调试和 CI 默认禁止：
