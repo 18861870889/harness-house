@@ -433,6 +433,7 @@ export default function App() {
       confidence: result.plan?.confidence ?? 0.6,
       summary: result.plan?.summary ?? logText,
       resolution: result.resolution,
+      explanation: result.explanation,
       steps: accepted.map((item) => ({
         id: `${item.thingId}:${item.capabilityId}`,
         deviceId: item.thingId,
@@ -1021,6 +1022,7 @@ function PendingPlan({ plan, onConfirm, onCancel }) {
 
 function PlanPreview({ plan }) {
   if (!plan) return null;
+  const explanationLines = plan.explanation?.summary?.split("\n").filter(Boolean) ?? [];
 
   return (
     <section className="panel plan-panel">
@@ -1032,6 +1034,16 @@ function PlanPreview({ plan }) {
         </span>
       </div>
       <p className="plan-summary">{plan.summary}</p>
+      {explanationLines.length > 0 && (
+        <div className="intent-explanation">
+          <div className="explanation-title">{plan.explanation.title ?? "Intent Explanation"}</div>
+          {explanationLines.slice(0, 6).map((line) => (
+            <div className="explanation-line" key={line}>
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="step-list">
         {plan.steps.length === 0 ? (
           <div className="empty-step">No device action</div>

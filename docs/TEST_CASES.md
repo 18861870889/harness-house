@@ -33,12 +33,24 @@
 - 模型输出不存在的 `device_id` 或 `capability` 时，normalize 阶段拒绝。
 - 模型 summary 可以使用，但执行依据只能来自 HCM ids。
 
-## 4. 自动化测试入口
+## 4. Personal Semantics 与解释
+
+必须覆盖：
+
+- `晾衣服` 只能在明确匹配晾衣杆等目标时生成 planner hint，不能只凭房间把阳台开关当成候选。
+- `玄关人体` 可以作为状态查询 hint 指向入户传感器。
+- Personal semantics 只作为 LLM planner hints 和解释证据，不直接生成 executable actions。
+- Intent explainer 必须输出目标设备、能力、service、家庭语义和安全判断。
+- 状态查询解释必须明确“只读状态查询，不执行设备动作”。
+
+## 5. 自动化测试入口
 
 核心场景 benchmark 位于：
 
 - `src/harnessScenario.fixture.js`
 - `src/hcmIntentBenchmark.test.js`
+- `src/personalSemantics.test.js`
+- `src/intentExplainer.test.js`
 
 必须运行：
 

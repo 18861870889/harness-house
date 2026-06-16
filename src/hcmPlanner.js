@@ -85,6 +85,7 @@ export function buildHcmPlannerSystemPrompt() {
     "Use only the provided HCM devices and capability ids.",
     "Never invent devices, rooms, or capabilities.",
     "Every user command must be interpreted by you first, including read-only state questions.",
+    "Use personal_semantics as hints for household phrases, but still output only valid HCM device ids and capability ids.",
     "Prefer the user's selected/current room when the command is ambiguous.",
     "Only choose capabilities whose operation matches the user's intent.",
     "For state questions, choose exactly one HCM device in query.device_id and return no actions.",

@@ -3,6 +3,7 @@ import { finishCommandTrace, createCommandTrace } from "./commandRuntime.js";
 import { buildHcmExecutionPlan } from "./hcmExecutor.js";
 import { compileHcmForPlanner, normalizeHcmPlannerDraft } from "./hcmPlanner.js";
 import { createHarnessScenarioHome } from "./harnessScenario.fixture.js";
+import { compilePersonalSemanticsForPlanner } from "./personalSemantics.js";
 
 function normalizeDraft(input, draft) {
   return normalizeHcmPlannerDraft(input, draft, createHarnessScenarioHome());
@@ -197,6 +198,22 @@ describe("HCM intent benchmark", () => {
         value: false,
       }),
     ]);
+  });
+
+  it("provides personal semantic hints for household phrases used by the planner", () => {
+    const home = createHarnessScenarioHome();
+
+    expect(compilePersonalSemanticsForPlanner("我要晾衣服", home)).toEqual([
+      expect.objectContaining({
+        phrase: "晾衣服",
+        intent: "prepare_laundry_drying",
+        candidates: [expect.objectContaining({ thingId: "balcony_drying_rack" })],
+      }),
+    ]);
+    expect(compilePersonalSemanticsForPlanner("准备看电影", home)[0]).toMatchObject({
+      phrase: "看电影",
+      intent: "movie_mode",
+    });
   });
 
   it("compiles normalized control plans into deterministic Home Assistant service calls", () => {

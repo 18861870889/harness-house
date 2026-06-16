@@ -80,4 +80,33 @@ describe("command runtime", () => {
       status: "dry_run",
     });
   });
+
+  it("preserves intent explanations in audit traces", () => {
+    const trace = createCommandTrace({ input: "我要晾衣服", now: () => 1000 });
+    const audit = finishCommandTrace(
+      trace,
+      {
+        status: "dry_run",
+        plan: { id: "plan", kind: "real_hcm", intent: "prepare_laundry_drying", intentType: "scene", actions: [] },
+        execution: { status: "dry_run", dryRun: true, accepted: [], rejected: [], results: [] },
+        explanation: {
+          title: "执行计划解释",
+          summary: "我理解为：准备晾衣服\n目标设备：阳台晾衣杆",
+          intent: { type: "scene", name: "prepare_laundry_drying", confidence: 0.88 },
+          targets: ["阳台晾衣杆"],
+          services: ["cover.set_cover_position"],
+          safety: { status: "dry_run", dryRun: true, rejectedCount: 0, needsConfirmation: false },
+          hints: [{ phrase: "晾衣服", target: "阳台晾衣杆", confidence: 0.95 }],
+        },
+      },
+      () => 1015,
+    );
+
+    expect(audit.explanation).toMatchObject({
+      title: "执行计划解释",
+      targets: ["阳台晾衣杆"],
+      services: ["cover.set_cover_position"],
+      hints: [{ phrase: "晾衣服", target: "阳台晾衣杆" }],
+    });
+  });
 });

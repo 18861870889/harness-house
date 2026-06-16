@@ -414,7 +414,51 @@ switch.xiaomi_123
 - 自动化回归测试不依赖真实设备状态变化。
 - 真实设备控制测试需要单独标记并人工确认。
 
-### v0.7 - Multi-Agent Runtime
+### v0.7 - Intent Precision & Explainability
+
+状态：进行中。
+
+目标：
+
+让所有真实 HCM 指令先经过大模型意图解析，再由本地 HCM、personal semantics、safety gate 和 executor 生成可解释、可审计的精确控制计划。
+
+新增能力：
+
+- LLM-first HCM intent resolution。
+- Personal Semantics：把家庭语言作为 planner hints，例如 `晾衣服 -> 阳台晾衣杆`、`小爱音箱 -> 小爱音箱Pro`。
+- Intent Dry-run Explainer：解释“我理解为、目标设备、执行能力、将调用 service、安全判断”。
+- 场景级 benchmark：覆盖状态查询、单设备控制、场景意图、越权拒绝、模型噪声。
+
+验收：
+
+- 状态查询不绕过 LLM，但状态内容由本地 HCM 读取。
+- Personal semantics 不直接执行，只影响 planner hints 和解释证据。
+- Sensor/config/privacy/gas 等能力不能被模型放进 executable actions。
+- 每条真实 HCM 结果都能解释目标、能力、service 和安全原因。
+- `npm test` 覆盖家庭场景 benchmark，错误执行率保持 0。
+
+### v0.8 - HA Service Simulation & Debug Safety
+
+目标：
+
+把真实 HA 调试从“直接试设备”改成“读取真实接口，模拟 service 调用”，避免自动化测试误操作家庭设备。
+
+新增能力：
+
+- `HomeAssistantServiceSimulator`：基于当前 HA states、entity registry、device registry、supported_features 模拟 service 调用。
+- HCM executor 的 service 选择优先参考 HA entity 能力，不只看 domain。
+- `/api/hcm/command` 的调试默认使用 dry-run。
+- 自动化调试禁止默认下发真实 `/api/services/*`。
+- 只有用户明确授权时，才允许真实控制 HA 设备。
+
+验收：
+
+- `media_player` 的 pause/stop/play/turn_off 能根据 supported_features 做选择。
+- 常见 domain 的 service 映射有 mock 覆盖。
+- 自动化回归测试不依赖真实设备状态变化。
+- 真实设备控制测试需要单独标记并人工确认。
+
+### v0.9 - Multi-Agent Runtime
 
 目标：
 
@@ -455,7 +499,7 @@ Learning/Diagnostics 后台观察
 - Background worker retry tests。
 - Generated test case review。
 
-### v0.8 - Real Home Pilot
+### v0.10 - Real Home Pilot
 
 目标：
 

@@ -16,6 +16,11 @@ import {
   compileHcmForPlanner,
   normalizeHcmPlannerDraft,
 } from "./src/hcmPlanner.js";
+import { explainIntentResult } from "./src/intentExplainer.js";
+import {
+  applyPersonalSemanticsToThingAliases,
+  compilePersonalSemanticsForPlanner,
+} from "./src/personalSemantics.js";
 import { createCommandTrace, finishCommandTrace, runCommandStage } from "./src/commandRuntime.js";
 import {
   createLearningMemory,
@@ -482,12 +487,23 @@ async function runHcmCommandPipeline(payload) {
     const rawHome = await runCommandStage(trace, "context_snapshot", () => homeAssistantAdapter.discoverHcmHome(), {
       summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
     });
-    const home = await runCommandStage(trace, "policy_overlay", async () => applyHcmOverlay(rawHome, readHcmOverlay()), {
+    const home = await runCommandStage(trace, "policy_overlay", async () => applyPersonalSemanticsToThingAliases(applyHcmOverlay(rawHome, readHcmOverlay())), {
       summarize: (home) => ({
         autoExecutable: home.stats.autoExecutableCapabilities,
         protected: home.stats.unresolvedBindingCount,
       }),
     });
+    const personalSemantics = await runCommandStage(
+      trace,
+      "personal_semantics",
+      async () => compilePersonalSemanticsForPlanner(payload.input, home),
+      {
+        summarize: (hints) => ({
+          hints: hints.length,
+          phrases: hints.map((hint) => hint.phrase).slice(0, 4),
+        }),
+      },
+    );
     const plannerDevices = await runCommandStage(
       trace,
       "prompt_compile",
@@ -518,8 +534,9 @@ async function runHcmCommandPipeline(payload) {
           currentRoomId: payload.currentRoomId,
           selectedRoomId: payload.selectedRoomId,
           devices: plannerDevices,
+          personalSemantics,
         }),
-      { summarize: (draft) => ({ intent: draft.intent, actionCount: draft.actions?.length ?? 0 }) },
+      { summarize: (draft) => ({ intent: draft.intent, intentType: draft.intent_type, actionCount: draft.actions?.length ?? 0 }) },
     );
     const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
       summarize: (plan) => ({
@@ -562,14 +579,23 @@ async function runHcmCommandPipeline(payload) {
       execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
     }
 
+    const explanation = explainIntentResult({
+      input: payload.input,
+      plan,
+      execution,
+      plannerHints: personalSemantics,
+    });
+
     const planner = {
       deviceCount: plannerDevices.length,
       capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
+      personalSemanticHintCount: personalSemantics.length,
     };
     const auditEntry = finishCommandTrace(trace, {
       status: execution.status,
       plan,
       execution,
+      explanation,
       model: getModel(),
       planner,
     });
@@ -586,6 +612,7 @@ async function runHcmCommandPipeline(payload) {
       execution,
       planner,
       resolution: plan.resolution,
+      explanation,
       trace: auditEntry,
     };
   } catch (error) {
@@ -673,6 +700,7 @@ async function callHcmPlannerModel(payload) {
             currentRoomId: payload.currentRoomId,
             selectedRoomId: payload.selectedRoomId,
             devices: payload.devices,
+            personal_semantics: payload.personalSemantics ?? [],
           }),
         },
       ],

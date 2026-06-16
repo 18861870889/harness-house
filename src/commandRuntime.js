@@ -34,7 +34,7 @@ export async function runCommandStage(trace, name, fn, { now = () => Date.now(),
   }
 }
 
-export function finishCommandTrace(trace, { status, plan, execution, model, planner } = {}, now = () => Date.now()) {
+export function finishCommandTrace(trace, { status, plan, execution, explanation, model, planner } = {}, now = () => Date.now()) {
   const finishedAt = now();
   const safety = summarizeSafety(plan, execution);
   const entry = {
@@ -52,6 +52,7 @@ export function finishCommandTrace(trace, { status, plan, execution, model, plan
     planner,
     plan: summarizePlan(plan),
     execution: summarizeExecution(execution),
+    explanation: summarizeExplanation(explanation),
     safety,
   };
   trace.status = status;
@@ -113,6 +114,19 @@ function summarizeExecution(execution) {
       capabilityName: item.capabilityName,
       service: item.service,
     })),
+  };
+}
+
+function summarizeExplanation(explanation) {
+  if (!explanation) return null;
+  return {
+    title: explanation.title,
+    summary: explanation.summary,
+    intent: explanation.intent,
+    targets: explanation.targets ?? [],
+    services: explanation.services ?? [],
+    safety: explanation.safety,
+    hints: explanation.hints ?? [],
   };
 }
 
