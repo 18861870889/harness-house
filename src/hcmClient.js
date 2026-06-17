@@ -98,6 +98,16 @@ export async function getLearningMemory() {
   return payload;
 }
 
+export async function getAgentSnapshot() {
+  const response = await fetch("/api/agents/snapshot");
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Agent snapshot request failed ${response.status}`);
+  }
+  return payload;
+}
+
 export async function updateLearningCandidate({ candidateId, status, note }) {
   const response = await fetch(`/api/learning/candidates/${encodeURIComponent(candidateId)}`, {
     method: "PATCH",

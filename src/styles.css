@@ -259,6 +259,110 @@ button {
   color: var(--cyan);
 }
 
+.agent-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.agent-mode strong {
+  color: var(--cyan);
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.agent-card {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.agent-card span,
+.agent-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card strong {
+  display: block;
+  min-width: 0;
+  margin: 3px 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-item {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 3px 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.agent-item span,
+.agent-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-item strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-item small {
+  grid-column: 2;
+}
+
+.agent-item.severity-critical {
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.agent-item.severity-high,
+.agent-item.severity-medium {
+  border-color: rgba(251, 191, 36, 0.26);
+}
+
 .panel-title h2 {
   flex: 1;
   min-width: 0;

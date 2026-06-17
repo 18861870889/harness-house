@@ -25,6 +25,7 @@ import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
   applyDefaultRunPolicy,
   deleteLearningCandidate,
+  getAgentSnapshot,
   getCommandAudit,
   getHcmHome,
   getLearningMemory,
@@ -103,6 +104,7 @@ export default function App() {
   const [defaultRunSummary, setDefaultRunSummary] = useState(null);
   const [commandAudit, setCommandAudit] = useState([]);
   const [learningMemory, setLearningMemory] = useState(null);
+  const [agentSnapshot, setAgentSnapshot] = useState(null);
   const [intelligenceActionId, setIntelligenceActionId] = useState(null);
   const inputRef = useRef(null);
 
@@ -162,13 +164,25 @@ export default function App() {
   }, [refreshHcmHome]);
 
   const refreshIntelligence = useCallback(async () => {
-    try {
-      const [audit, memory] = await Promise.all([getCommandAudit({ limit: 8 }), getLearningMemory()]);
-      setCommandAudit(audit.entries ?? []);
-      setLearningMemory(memory);
-    } catch {
+    const [auditResult, memoryResult, agentResult] = await Promise.allSettled([
+      getCommandAudit({ limit: 8 }),
+      getLearningMemory(),
+      getAgentSnapshot(),
+    ]);
+    if (auditResult.status === "fulfilled") {
+      setCommandAudit(auditResult.value.entries ?? []);
+    } else {
       setCommandAudit([]);
+    }
+    if (memoryResult.status === "fulfilled") {
+      setLearningMemory(memoryResult.value);
+    } else {
       setLearningMemory(null);
+    }
+    if (agentResult.status === "fulfilled") {
+      setAgentSnapshot(agentResult.value);
+    } else {
+      setAgentSnapshot(null);
     }
   }, []);
 
@@ -596,6 +610,7 @@ export default function App() {
         <IntelligencePanel
           audit={commandAudit}
           memory={learningMemory}
+          agents={agentSnapshot}
           actionId={intelligenceActionId}
           onRefresh={refreshIntelligence}
           onReplay={replayAuditEntry}
@@ -1102,18 +1117,67 @@ function PlanPreview({ plan }) {
   );
 }
 
-function IntelligencePanel({ audit, memory, actionId, onRefresh, onReplay, onIgnoreCandidate, onDeleteCandidate }) {
+function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onReplay, onIgnoreCandidate, onDeleteCandidate }) {
   const candidates = memory?.topCandidates ?? [];
   const corrections = memory?.correctionCandidates ?? [];
+  const context = agents?.agents?.context;
+  const mapping = agents?.agents?.mapping;
+  const diagnostics = agents?.agents?.diagnostics;
   return (
     <section className="panel intelligence-panel">
       <div className="panel-title">
         <Bot size={17} />
-        <h2>Learning</h2>
+        <h2>Agents</h2>
         <button className="mini-icon-button" type="button" onClick={onRefresh} title="刷新审计和学习摘要">
           <RefreshCw size={13} />
         </button>
       </div>
+      <div className="agent-mode">
+        <span>Shadow mode</span>
+        <strong>{agents?.summary?.agentCount ?? 0} agents</strong>
+      </div>
+      {agents && (
+        <div className="agent-grid">
+          <div className="agent-card">
+            <span>Context</span>
+            <strong>{context?.likelySpace?.name ?? "未知"}</strong>
+            <small>
+              {context?.likelySpace ? `${Math.round((context.likelySpace.confidence ?? 0) * 100)}% 置信度` : "无占用信号"}
+            </small>
+          </div>
+          <div className="agent-card">
+            <span>Mapping</span>
+            <strong>{mapping?.candidates?.length ?? 0}</strong>
+            <small>接入/边界建议</small>
+          </div>
+          <div className="agent-card">
+            <span>Diagnostics</span>
+            <strong>{diagnostics?.findings?.length ?? 0}</strong>
+            <small>运行发现</small>
+          </div>
+        </div>
+      )}
+      {mapping?.candidates?.length > 0 && (
+        <div className="agent-list">
+          {mapping.candidates.slice(0, 2).map((candidate) => (
+            <div className={`agent-item severity-${candidate.severity}`} key={candidate.thingId || candidate.thingName}>
+              <span>{candidate.proposedAction}</span>
+              <strong>{candidate.thingName}</strong>
+              <small>{candidate.reason}</small>
+            </div>
+          ))}
+        </div>
+      )}
+      {diagnostics?.findings?.length > 0 && (
+        <div className="agent-list">
+          {diagnostics.findings.slice(0, 2).map((finding) => (
+            <div className={`agent-item severity-${finding.severity}`} key={finding.id}>
+              <span>{finding.title}</span>
+              <strong>{finding.message}</strong>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="learning-metrics">
         <Metric label="审计" value={`${audit.length}`} />
         <Metric label="候选" value={`${memory?.candidateCount ?? 0}`} />

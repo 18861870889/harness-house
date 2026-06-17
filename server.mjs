@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
+import { runAgentRuntime } from "./src/agentRuntime.js";
 import {
   applyDefaultRunPolicy,
   applyHcmOverlay,
@@ -198,6 +199,23 @@ app.post("/api/hcm/command", async (request, response) => {
   } catch (error) {
     response.status(error.statusCode || 502).json({
       error: error.message || "HCM command failed",
+    });
+  }
+});
+
+app.get("/api/agents/snapshot", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    response.json(await buildAgentSnapshot());
+  } catch (error) {
+    response.status(502).json({
+      error: error.message || "Agent snapshot failed",
     });
   }
 });
@@ -601,6 +619,10 @@ async function runHcmCommandPipeline(payload) {
       execution,
       plannerHints: personalSemantics,
     });
+    const agents = runAgentRuntime({
+      home,
+      auditEntries: readCommandAuditEntries(20),
+    });
 
     const planner = {
       deviceCount: plannerDevices.length,
@@ -612,6 +634,7 @@ async function runHcmCommandPipeline(payload) {
       plan,
       execution,
       explanation,
+      agents,
       model: getModel(),
       planner,
     });
@@ -629,6 +652,7 @@ async function runHcmCommandPipeline(payload) {
       planner,
       resolution: plan.resolution,
       explanation,
+      agents,
       trace: auditEntry,
     };
   } catch (error) {
@@ -636,6 +660,14 @@ async function runHcmCommandPipeline(payload) {
     writeCommandAuditEntry({ ...auditEntry, error: error.message });
     throw error;
   }
+}
+
+async function buildAgentSnapshot() {
+  const home = applyPersonalSemanticsToThingAliases(applyHcmOverlay(await homeAssistantAdapter.discoverHcmHome(), readHcmOverlay()));
+  return runAgentRuntime({
+    home,
+    auditEntries: readCommandAuditEntries(20),
+  });
 }
 
 function badRequest(message) {

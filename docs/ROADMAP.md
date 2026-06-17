@@ -471,6 +471,8 @@ switch.xiaomi_123
 
 ### v0.9 - Multi-Agent Runtime
 
+状态：已完成 alpha。
+
 目标：
 
 引入多 agent，但只用于提升可靠性和可维护性，不在主链路里做长时间争论。
@@ -487,6 +489,16 @@ switch.xiaomi_123
 | Diagnostics Agent | 检查失败、离线、延迟异常 | 否，异步 |
 | Test Agent | 自动生成回归用例和仿真场景 | 否，开发期 |
 
+当前 alpha 范围：
+
+- `AgentRuntime`：统一生成 shadow-mode agent snapshot，不写 overlay、不执行设备。
+- `Context Agent`：从 HCM presence / motion / door sensor 推断房间占用置信度。
+- `Mapping Agent`：基于 unresolved bindings 与高风险/非自动 capability 生成接入和边界建议。
+- `Diagnostics Agent`：从 HCM 和最近 audit 中发现离线设备、失败指令、service simulator 拦截和 2 秒预算问题。
+- `/api/agents/snapshot`：读取当前后台 agent 快照。
+- `/api/hcm/command` 返回与 audit 中附带 agent 摘要，但 agent 不参与主链路执行决策。
+- UI `Agents` 面板展示 context / mapping / diagnostics 的 shadow 建议。
+
 主链路不做 agent debate。可接受的模式是：
 
 ```text
@@ -498,17 +510,17 @@ Learning/Diagnostics 后台观察
 
 验收：
 
-- 多 agent 失败不会阻塞基础控制。
-- Learning Agent 只生成建议，不直接改生产规则。
-- Diagnostics Agent 能发现 adapter 失败、设备离线、响应慢。
-- Test Agent 能基于设备 manifest 生成命令测试集。
+- 多 agent 失败不会阻塞基础控制。已通过旁路 snapshot 设计约束。
+- Learning / Mapping Agent 只生成建议，不直接改生产规则。已覆盖当前 alpha。
+- Diagnostics Agent 能发现失败、离线、service simulator 拦截、响应慢。已覆盖当前 alpha。
+- Test Agent 能基于设备 manifest 生成命令测试集。留到后续增强。
 
 测试要求：
 
-- Agent contract tests。
-- Agent timeout tests。
-- Background worker retry tests。
-- Generated test case review。
+- Agent contract tests。已覆盖。
+- Agent timeout tests。后续在后台 worker 化后补齐。
+- Background worker retry tests。后续在后台 worker 化后补齐。
+- Generated test case review。后续 Test Agent 增强。
 
 ### v0.10 - Real Home Pilot
 

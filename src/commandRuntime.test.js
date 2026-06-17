@@ -109,4 +109,37 @@ describe("command runtime", () => {
       hints: [{ phrase: "晾衣服", target: "阳台晾衣杆" }],
     });
   });
+
+  it("summarizes shadow agent snapshots in audit traces", () => {
+    const trace = createCommandTrace({ input: "打开客厅灯", now: () => 1000 });
+    const audit = finishCommandTrace(
+      trace,
+      {
+        status: "dry_run",
+        agents: {
+          version: "0.1",
+          mode: "shadow",
+          generatedAt: "2026-06-17T12:00:00.000Z",
+          summary: { agentCount: 3, mappingCandidates: 2, diagnosticsFindings: 1 },
+          agents: {
+            context: {
+              likelySpace: { id: "study", name: "书房", occupied: true, confidence: 0.92 },
+              spaces: [{ id: "study", occupied: true }],
+            },
+            mapping: { candidates: [{ thingId: "camera" }], summary: { protectedCandidates: 1 } },
+            diagnostics: { findings: [{ id: "latency_budget", severity: "high" }] },
+          },
+        },
+      },
+      () => 1010,
+    );
+
+    expect(audit.agents).toMatchObject({
+      mode: "shadow",
+      summary: { agentCount: 3 },
+      context: { likelySpace: { id: "study", confidence: 0.92 }, occupiedSpaces: 1 },
+      mapping: { candidateCount: 1, protectedCandidates: 1 },
+      diagnostics: { findingCount: 1, highFindings: 1 },
+    });
+  });
 });

@@ -65,7 +65,20 @@
 - dry-run 解释必须显示“模拟校验”，并明确未触碰真实设备。
 - 自动化测试不能调用真实 `/api/services/*`；真实设备验收必须人工触发。
 
-## 7. 自动化测试入口
+## 7. Multi-Agent Runtime
+
+必须覆盖：
+
+- Context Agent 从人在传感器判断书房有人，置信度高于 motion sensor。
+- 玄关人体传感器只能作为 motion 证据，不能等同于长期人在。
+- Mapping Agent 只能生成 shadow-mode 接入/边界建议，不能直接修改 overlay。
+- Mapping Agent 必须同时读取 unresolved bindings 和 HCM capability policy。
+- Diagnostics Agent 必须能发现近期 rejected / partial_failure / error。
+- Diagnostics Agent 必须能发现 HA service simulator 拦截。
+- 命令 audit 只保存 agent 摘要，不保存过大的完整 snapshot。
+- UI Agents 面板展示 shadow 状态，不能提供直接执行按钮。
+
+## 8. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -76,6 +89,7 @@
 - `src/intentExplainer.test.js`
 - `src/learningLayer.test.js`
 - `src/homeAssistantServiceSimulator.test.js`
+- `src/agentRuntime.test.js`
 
 必须运行：
 

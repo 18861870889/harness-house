@@ -34,7 +34,7 @@ export async function runCommandStage(trace, name, fn, { now = () => Date.now(),
   }
 }
 
-export function finishCommandTrace(trace, { status, plan, execution, explanation, model, planner } = {}, now = () => Date.now()) {
+export function finishCommandTrace(trace, { status, plan, execution, explanation, agents, model, planner } = {}, now = () => Date.now()) {
   const finishedAt = now();
   const safety = summarizeSafety(plan, execution);
   const entry = {
@@ -53,10 +53,46 @@ export function finishCommandTrace(trace, { status, plan, execution, explanation
     plan: summarizePlan(plan),
     execution: summarizeExecution(execution),
     explanation: summarizeExplanation(explanation),
+    agents: summarizeAgents(agents),
     safety,
   };
   trace.status = status;
   return entry;
+}
+
+function summarizeAgents(agents) {
+  if (!agents) return null;
+  return {
+    version: agents.version,
+    mode: agents.mode,
+    generatedAt: agents.generatedAt,
+    summary: agents.summary,
+    context: agents.agents?.context
+      ? {
+          likelySpace: agents.agents.context.likelySpace
+            ? {
+                id: agents.agents.context.likelySpace.id,
+                name: agents.agents.context.likelySpace.name,
+                occupied: agents.agents.context.likelySpace.occupied,
+                confidence: agents.agents.context.likelySpace.confidence,
+              }
+            : null,
+          occupiedSpaces: agents.agents.context.spaces?.filter((space) => space.occupied).length ?? 0,
+        }
+      : null,
+    mapping: agents.agents?.mapping
+      ? {
+          candidateCount: agents.agents.mapping.candidates?.length ?? 0,
+          protectedCandidates: agents.agents.mapping.summary?.protectedCandidates ?? 0,
+        }
+      : null,
+    diagnostics: agents.agents?.diagnostics
+      ? {
+          findingCount: agents.agents.diagnostics.findings?.length ?? 0,
+          highFindings: agents.agents.diagnostics.findings?.filter((finding) => finding.severity === "high").length ?? 0,
+        }
+      : null,
+  };
 }
 
 export function summarizeSafety(plan, execution) {
