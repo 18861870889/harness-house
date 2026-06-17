@@ -443,24 +443,31 @@ switch.xiaomi_123
 
 ### v0.8 - HA Service Simulation & Debug Safety
 
+状态：已完成 alpha。
+
 目标：
 
 把真实 HA 调试从“直接试设备”改成“读取真实接口，模拟 service 调用”，避免自动化测试误操作家庭设备。
 
 新增能力：
 
-- `HomeAssistantServiceSimulator`：基于当前 HA states、entity registry、device registry、supported_features 模拟 service 调用。
-- HCM executor 的 service 选择优先参考 HA entity 能力，不只看 domain。
-- `/api/hcm/command` 的调试默认使用 dry-run。
-- 自动化调试禁止默认下发真实 `/api/services/*`。
-- 只有用户明确授权时，才允许真实控制 HA 设备。
+- `HomeAssistantServiceSupport`：集中维护 HA domain service 白名单和 `media_player.supported_features` 判断。
+- `HomeAssistantServiceSimulator`：基于当前 HCM snapshot、HA entity binding、online 状态和 `supported_features` 模拟 service 调用。
+- HCM executor 的 `media_player` service 选择优先参考 HA entity 能力，不只看 domain：
+  - 停止播放优先 `media_pause`。
+  - 不支持 pause 但支持 stop 时使用 `media_stop`。
+  - 不支持 pause/stop 但支持 turn_off 时使用 `turn_off`。
+- `/api/hcm/command` 在 safety gate 后新增 `ha_service_simulator` 阶段。
+- simulator 拒绝 unknown entity、offline thing、domain mismatch、unsupported service、unsupported media feature。
+- dry-run/explainer 会展示模拟校验结果；自动化调试不会触碰真实设备。
 
 验收：
 
-- `media_player` 的 pause/stop/play/turn_off 能根据 supported_features 做选择。
-- 常见 domain 的 service 映射有 mock 覆盖。
-- 自动化回归测试不依赖真实设备状态变化。
-- 真实设备控制测试需要单独标记并人工确认。
+- `media_player` 的 pause/stop/play/turn_off 能根据 supported_features 做选择。已覆盖。
+- 常见 domain 的 service 映射有 mock 覆盖。已覆盖基础白名单。
+- 自动化回归测试不依赖真实设备状态变化。已覆盖。
+- 真实设备控制测试需要单独标记并人工确认。继续作为工程政策。
+- 当模拟层拒绝 service call 时，真实 executor 不会被调用。
 
 ### v0.9 - Multi-Agent Runtime
 

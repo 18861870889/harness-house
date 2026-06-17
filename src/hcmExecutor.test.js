@@ -50,7 +50,7 @@ function createExecutorHome() {
             kind: "control",
             valueType: "unknown",
             policy: { risk: "low", confirmation: "never", autoExecutable: true },
-            binding: { provider: "home_assistant", domain: "media_player", entityId: "media_player.xiaoai" },
+            binding: { provider: "home_assistant", domain: "media_player", entityId: "media_player.xiaoai", supportedFeatures: 1 },
           },
         ],
       },
@@ -99,6 +99,25 @@ describe("hcm executor", () => {
         domain: "media_player",
         service: "media_pause",
         serviceData: { entity_id: "media_player.xiaoai" },
+      },
+    });
+  });
+
+  it("falls back to media_stop when pause is not supported but stop is", () => {
+    const home = createExecutorHome();
+    const speaker = home.things.find((thing) => thing.id === "ha_speaker");
+    speaker.capabilities[0].binding.supportedFeatures = 4096;
+
+    const result = validateHcmAction(
+      { thingId: "ha_speaker", capabilityId: "speaker", value: false },
+      home,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      serviceCall: {
+        domain: "media_player",
+        service: "media_stop",
       },
     });
   });

@@ -1,4 +1,5 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS } from "./hcm.js";
+import { mediaPlayerServiceForBoolean } from "./homeAssistantServiceSupport.js";
 
 const EXECUTABLE_DOMAINS = new Set(["light", "switch", "fan", "cover", "climate", "media_player", "button"]);
 
@@ -76,7 +77,10 @@ export function mapHcmActionToHomeAssistantService({ capability, value }) {
       return { domain, service: value ? "open_cover" : "close_cover", serviceData };
     }
     if (domain === "media_player" && value === false) {
-      return { domain, service: "media_pause", serviceData };
+      return { domain, service: mediaPlayerServiceForBoolean(value, capability), serviceData };
+    }
+    if (domain === "media_player" && value === true) {
+      return { domain, service: mediaPlayerServiceForBoolean(value, capability), serviceData };
     }
     return { domain, service: value ? "turn_on" : "turn_off", serviceData };
   }

@@ -113,7 +113,15 @@ function summarizeExecution(execution) {
       capabilityId: item.capabilityId,
       capabilityName: item.capabilityName,
       service: item.service,
+      simulation: item.simulation,
     })),
+    simulation: execution.simulation
+      ? {
+          ok: execution.simulation.ok,
+          rejectedCount: execution.simulation.rejected?.length ?? 0,
+          assumedCount: execution.simulation.checks?.filter((check) => check.code === "assumed_supported").length ?? 0,
+        }
+      : null,
   };
 }
 

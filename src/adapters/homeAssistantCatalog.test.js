@@ -54,7 +54,7 @@ describe("home assistant catalog mapper", () => {
         {
           entity_id: "switch.topwit_living_on_p_2_1",
           state: "on",
-          attributes: { friendly_name: "客厅八筒灯" },
+          attributes: { friendly_name: "客厅八筒灯", supported_features: 0 },
         },
         {
           entity_id: "switch.topwit_living_mutual_control_p_23_1",
@@ -89,6 +89,13 @@ describe("home assistant catalog mapper", () => {
         }),
       ]),
     );
+    expect(
+      hcm.things[0].capabilities.find((capability) => capability.binding.entityId === "switch.topwit_living_on_p_2_1")
+        .binding,
+    ).toMatchObject({
+      supportedFeatures: 0,
+      currentState: "on",
+    });
     expect(hcm.unresolvedBindings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

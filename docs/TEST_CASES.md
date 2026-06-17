@@ -53,7 +53,19 @@
 - `no_action` / `rejected` / `partial_failure` 进入 shadow correction candidates。
 - correction candidates 不会自动变成 personal semantics 或 executable actions。
 
-## 6. 自动化测试入口
+## 6. HA Service Simulator 与调试安全
+
+必须覆盖：
+
+- `media_player` 支持 pause 时，停止播放编译并模拟为 `media_player.media_pause`。
+- `media_player` 不支持 pause 但支持 stop 时，停止播放编译为 `media_player.media_stop`。
+- `media_player` 明确不支持某个 service 时，模拟层拒绝，真实 executor 不下发。
+- 设备离线时，模拟层拒绝并返回 `thing_offline`。
+- service call 的 entity 不在当前 HCM snapshot 时，模拟层拒绝并返回 `unknown_entity`。
+- dry-run 解释必须显示“模拟校验”，并明确未触碰真实设备。
+- 自动化测试不能调用真实 `/api/services/*`；真实设备验收必须人工触发。
+
+## 7. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -63,6 +75,7 @@
 - `src/personalSemantics.test.js`
 - `src/intentExplainer.test.js`
 - `src/learningLayer.test.js`
+- `src/homeAssistantServiceSimulator.test.js`
 
 必须运行：
 

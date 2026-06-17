@@ -11,6 +11,7 @@ import {
   setThingOverride,
 } from "./src/hcmOverlay.js";
 import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
+import { simulateHcmServiceCalls } from "./src/homeAssistantServiceSimulator.js";
 import {
   buildHcmPlannerSystemPrompt,
   compileHcmForPlanner,
@@ -550,11 +551,24 @@ async function runHcmCommandPipeline(payload) {
     const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
       summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
     });
+    const serviceSimulation = await runCommandStage(
+      trace,
+      "ha_service_simulator",
+      async () => simulateHcmServiceCalls(executionPlan.accepted, home),
+      {
+        summarize: (simulation) => ({
+          ok: simulation.checks.filter((check) => check.ok).length,
+          rejected: simulation.rejected.length,
+          assumed: simulation.checks.filter((check) => check.code === "assumed_supported").length,
+        }),
+      },
+    );
     const execution = {
       status: "planned",
       dryRun: Boolean(payload.dryRun),
-      accepted: executionPlan.accepted.map(formatAcceptedExecution),
-      rejected: executionPlan.rejected,
+      accepted: executionPlan.accepted.map((item) => formatAcceptedExecution(item, serviceSimulation)),
+      rejected: [...executionPlan.rejected, ...serviceSimulation.rejected],
+      simulation: serviceSimulation,
       results: [],
     };
 
@@ -565,6 +579,8 @@ async function runHcmCommandPipeline(payload) {
     } else if (plan.needsConfirmation) {
       execution.status = "needs_confirmation";
     } else if (!executionPlan.ok) {
+      execution.status = "rejected";
+    } else if (!serviceSimulation.ok) {
       execution.status = "rejected";
     } else if (payload.dryRun) {
       execution.status = "dry_run";
@@ -753,15 +769,24 @@ async function executeHcmServiceCalls(accepted) {
   return results;
 }
 
-function formatAcceptedExecution(item) {
+function formatAcceptedExecution(item, simulation) {
+  const service = `${item.serviceCall.domain}.${item.serviceCall.service}`;
+  const check = simulation?.checks?.find((candidate) => candidate.service === service && candidate.thingId === item.thing.id);
   return {
     thingId: item.thing.id,
     thingName: item.thing.name,
     capabilityId: item.capability.id,
     capabilityName: item.capability.name,
     value: item.action.value,
-    service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
+    service,
     serviceData: item.serviceCall.serviceData,
+    simulation: check
+      ? {
+          ok: check.ok,
+          code: check.code,
+          message: check.message,
+        }
+      : null,
   };
 }
 

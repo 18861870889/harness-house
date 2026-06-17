@@ -150,7 +150,7 @@ function mapEntityToCapabilities({ entity, state, thingType, device }) {
     valueType: valueTypeForDomain(domain),
     state: normalizeStateValue(state),
     unit: state?.attributes?.unit_of_measurement,
-    binding: createBinding(entity, domain),
+    binding: createBinding(entity, domain, state),
   };
 
   if (CONTROL_DOMAINS.has(domain)) {
@@ -207,13 +207,16 @@ function capabilityId(entity) {
   return stableId(entity.translation_key || entity.original_name || entity.name || objectId);
 }
 
-function createBinding(entity, domain) {
+function createBinding(entity, domain, state) {
   return {
     provider: "home_assistant",
     entityId: entity.entity_id,
     domain,
     platform: entity.platform,
     deviceId: entity.device_id,
+    supportedFeatures:
+      typeof state?.attributes?.supported_features === "number" ? state.attributes.supported_features : undefined,
+    currentState: state?.state,
   };
 }
 

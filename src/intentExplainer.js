@@ -11,6 +11,8 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
     lines.push(`执行能力：${plan.actions.map((action) => `${action.thingName} ${action.capabilityName}`).join("；")}`);
   }
   if (services.length > 0) lines.push(`将调用：${services.join("；")}`);
+  const simulation = simulationText(execution);
+  if (simulation) lines.push(`模拟校验：${simulation}`);
   if (plannerHints.length > 0) {
     lines.push(`家庭语义：${plannerHints.map((hint) => `${hint.phrase} -> ${hint.candidates[0]?.thingName}`).join("；")}`);
   }
@@ -60,4 +62,14 @@ function safetyText(plan, execution) {
   if (execution?.status === "executed") return "低风险能力已通过 HCM 安全门。";
   if (execution?.status === "no_action") return "没有生成可执行动作。";
   return "已经过 HCM 能力边界和安全策略检查。";
+}
+
+function simulationText(execution) {
+  const checks = execution?.simulation?.checks;
+  if (!Array.isArray(checks) || checks.length === 0) return "";
+  const rejected = checks.filter((check) => !check.ok);
+  if (rejected.length > 0) return rejected.map((check) => check.message || check.code).join("；");
+  const assumed = checks.filter((check) => check.code === "assumed_supported");
+  if (assumed.length > 0) return `通过，${assumed.length} 项因 HA 未暴露 supported_features 采用保守假设`;
+  return "通过，未触碰真实设备";
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildHcmExecutionPlan } from "./hcmExecutor.js";
 import { normalizeHcmPlannerDraft } from "./hcmPlanner.js";
 import { createHarnessScenarioHome } from "./harnessScenario.fixture.js";
+import { simulateHcmServiceCalls } from "./homeAssistantServiceSimulator.js";
 import { explainIntentResult } from "./intentExplainer.js";
 import { compilePersonalSemanticsForPlanner } from "./personalSemantics.js";
 
@@ -20,6 +21,7 @@ describe("intent explainer", () => {
       home,
     );
     const executionPlan = buildHcmExecutionPlan(plan.actions, home);
+    const simulation = simulateHcmServiceCalls(executionPlan.accepted, home);
     const explanation = explainIntentResult({
       input: "我要晾衣服",
       plan,
@@ -32,6 +34,7 @@ describe("intent explainer", () => {
           service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
         })),
         rejected: [],
+        simulation,
       },
       plannerHints: compilePersonalSemanticsForPlanner("我要晾衣服", home),
     });
@@ -39,6 +42,7 @@ describe("intent explainer", () => {
     expect(explanation.summary).toContain("我理解为：准备晾衣服");
     expect(explanation.summary).toContain("目标设备：阳台晾衣杆");
     expect(explanation.summary).toContain("将调用：cover.set_cover_position");
+    expect(explanation.summary).toContain("模拟校验：通过，未触碰真实设备");
     expect(explanation.summary).toContain("家庭语义：晾衣服 -> 阳台晾衣杆");
     expect(explanation.summary).toContain("dry-run 预览，不会控制真实设备");
   });
