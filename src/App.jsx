@@ -29,6 +29,8 @@ import {
   getCommandAudit,
   getHcmHome,
   getLearningMemory,
+  getOnboardingPlan,
+  recordOnboardingSnapshot,
   replayCommandAudit,
   runHcmCommand,
   updateLearningCandidate,
@@ -96,6 +98,7 @@ export default function App() {
     model: "simulated",
   });
   const [hcmHome, setHcmHome] = useState(null);
+  const [onboardingPlan, setOnboardingPlan] = useState(null);
   const [hcmStatus, setHcmStatus] = useState({
     state: "idle",
     error: null,
@@ -106,6 +109,7 @@ export default function App() {
   const [learningMemory, setLearningMemory] = useState(null);
   const [agentSnapshot, setAgentSnapshot] = useState(null);
   const [intelligenceActionId, setIntelligenceActionId] = useState(null);
+  const [onboardingActionId, setOnboardingActionId] = useState(null);
   const inputRef = useRef(null);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
@@ -150,12 +154,17 @@ export default function App() {
 
   const refreshHcmHome = useCallback(async () => {
     setHcmStatus({ state: "loading", error: null });
-    try {
-      const home = await getHcmHome();
-      setHcmHome(home);
+    const [homeResult, onboardingResult] = await Promise.allSettled([getHcmHome(), getOnboardingPlan()]);
+    if (homeResult.status === "fulfilled") {
+      setHcmHome(homeResult.value);
       setHcmStatus({ state: "ready", error: null });
-    } catch (error) {
-      setHcmStatus({ state: "error", error: error.message });
+    } else {
+      setHcmStatus({ state: "error", error: homeResult.reason.message });
+    }
+    if (onboardingResult.status === "fulfilled") {
+      setOnboardingPlan(onboardingResult.value);
+    } else {
+      setOnboardingPlan(null);
     }
   }, []);
 
@@ -226,6 +235,36 @@ export default function App() {
     },
     [hcmHome?.provider?.id, refreshHcmHome, reviewActionId],
   );
+
+  const recordOnboardingBaseline = useCallback(async () => {
+    if (onboardingActionId) return;
+    setOnboardingActionId("baseline");
+    try {
+      await recordOnboardingSnapshot();
+      await refreshHcmHome();
+      setLogs((current) => [
+        {
+          id: crypto.randomUUID(),
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+          level: "success",
+          text: "已记录当前 HA provider baseline，后续新增/变更设备会进入 Onboarding Plan。",
+        },
+        ...current,
+      ]);
+    } catch (error) {
+      setLogs((current) => [
+        {
+          id: crypto.randomUUID(),
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+          level: "cancel",
+          text: `记录 Onboarding baseline 失败：${error.message}`,
+        },
+        ...current,
+      ]);
+    } finally {
+      setOnboardingActionId(null);
+    }
+  }, [onboardingActionId, refreshHcmHome]);
 
   const replayAuditEntry = useCallback(
     async (entry) => {
@@ -585,11 +624,14 @@ export default function App() {
         <SystemMetrics devices={devices} />
         <HcmCatalog
           home={hcmHome}
+          onboarding={onboardingPlan}
           status={hcmStatus}
           onRefresh={refreshHcmHome}
           onApplyDefaultRun={applyDefaultRun}
           onHideThing={hideHcmThing}
+          onRecordOnboardingBaseline={recordOnboardingBaseline}
           reviewActionId={reviewActionId}
+          onboardingActionId={onboardingActionId}
           defaultRunSummary={defaultRunSummary}
         />
         <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
@@ -715,11 +757,14 @@ function Metric({ label, value, tone = "normal" }) {
 
 function HcmCatalog({
   home,
+  onboarding,
   status,
   onRefresh,
   onApplyDefaultRun,
   onHideThing,
+  onRecordOnboardingBaseline,
   reviewActionId,
+  onboardingActionId,
   defaultRunSummary,
 }) {
   const areaCounts = useMemo(() => {
@@ -796,6 +841,11 @@ function HcmCatalog({
             onHideThing={onHideThing}
             actionId={reviewActionId}
           />
+          <OnboardingPanel
+            onboarding={onboarding}
+            actionId={onboardingActionId}
+            onRecordBaseline={onRecordOnboardingBaseline}
+          />
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
               <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
@@ -810,6 +860,44 @@ function HcmCatalog({
         </>
       )}
     </section>
+  );
+}
+
+function OnboardingPanel({ onboarding, actionId, onRecordBaseline }) {
+  const plan = onboarding?.plan;
+  if (!plan) return null;
+  const candidates = plan.candidates ?? [];
+  return (
+    <div className="onboarding-panel">
+      <div className="onboarding-header">
+        <span>Onboarding</span>
+        <strong>{plan.summary?.candidateCount ?? 0}</strong>
+        <button type="button" disabled={Boolean(actionId)} onClick={onRecordBaseline} title="记录当前 HA 快照为接入基线">
+          baseline
+        </button>
+      </div>
+      <div className="onboarding-metrics">
+        <span>
+          auto <strong>{plan.summary?.allowAutoCandidates ?? 0}</strong>
+        </span>
+        <span>
+          review <strong>{plan.summary?.reviewCount ?? 0}</strong>
+        </span>
+        <span>
+          protect <strong>{plan.summary?.protectCount ?? 0}</strong>
+        </span>
+      </div>
+      <small>{onboarding.hasBaseline ? "基于 provider diff" : "尚未记录 baseline，当前设备作为初始候选"}</small>
+      <div className="onboarding-list">
+        {candidates.slice(0, 3).map((candidate) => (
+          <div className={`onboarding-item action-${candidate.proposedAction}`} key={candidate.id}>
+            <span>{candidate.proposedAction}</span>
+            <strong>{candidate.thingName}</strong>
+            <small>{candidate.reason}</small>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

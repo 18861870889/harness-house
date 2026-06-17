@@ -82,7 +82,21 @@
 - 命令 audit 只保存 agent 摘要，不保存过大的完整 snapshot。
 - UI Agents 面板展示 shadow 状态，不能提供直接执行按钮。
 
-## 8. 自动化测试入口
+## 8. Provider-to-HCM Onboarding
+
+必须覆盖：
+
+- 新增明确低风险设备，例如灯具，生成 `allow_auto_candidate`。
+- 新增高风险设备，例如燃气热水器，生成 `protect`。
+- 新增隐私设备，例如摄像头，生成 `protect`。
+- 新增配置/密码类 `text/select/number` 能力，生成 `protect` 或 review。
+- 设备改名和换房间必须形成 diff，但不能丢失 entity identity。
+- `supported_features` 变化必须形成 state/provider diff 和 HCM binding change。
+- entity 删除后必须生成 `remove_from_planner`。
+- Onboarding simulation 只能使用本地 simulator，不控制真实 HA 设备。
+- API 层只能生成 proposal，不能自动写入 overlay 开放真实设备。
+
+## 9. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -94,6 +108,7 @@
 - `src/learningLayer.test.js`
 - `src/homeAssistantServiceSimulator.test.js`
 - `src/agentRuntime.test.js`
+- `src/providerOnboarding.test.js`
 
 必须运行：
 

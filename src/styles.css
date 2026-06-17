@@ -363,6 +363,111 @@ button {
   border-color: rgba(251, 191, 36, 0.26);
 }
 
+.onboarding-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.onboarding-header,
+.onboarding-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.onboarding-header strong {
+  color: var(--cyan);
+}
+
+.onboarding-header button {
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 7px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.onboarding-metrics span {
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+  background: rgba(2, 6, 23, 0.18);
+}
+
+.onboarding-panel > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.onboarding-list {
+  display: grid;
+  gap: 6px;
+}
+
+.onboarding-item {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 3px 7px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.onboarding-item span,
+.onboarding-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-item strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-item small {
+  grid-column: 2;
+}
+
+.onboarding-item.action-protect {
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.onboarding-item.action-review {
+  border-color: rgba(251, 191, 36, 0.24);
+}
+
+.onboarding-item.action-allow_auto_candidate {
+  border-color: rgba(134, 239, 172, 0.22);
+}
+
 .panel-title h2 {
   flex: 1;
   min-width: 0;

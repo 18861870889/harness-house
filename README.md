@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.9`
+当前进度：`v0.11`
 
 ## Core Idea
 
@@ -82,6 +82,15 @@ Provider Raw Graph
 - 每个后台 agent 独立记录耗时和预算状态；单个 agent 失败不会阻断主链路。
 - Agents 目前全部是 shadow mode，不写 overlay、不执行设备。
 
+### Provider-to-HCM Onboarding
+
+- `ProviderSnapshotDiff` 检测 HA device/entity/area/state 的新增、删除和变更。
+- `OnboardingPlanner` 把 provider diff 转成 HCM 接入候选。
+- 新设备会被分类为 `allow_auto_candidate` / `review` / `protect` / `read_only`。
+- 新增高风险、隐私、配置、语义不清设备默认保护。
+- Onboarding 只生成 overlay proposal，不自动开放真实设备。
+- 支持记录当前 HA graph 为 baseline，后续新增/变更设备进入 Onboarding Plan。
+
 ## Quick Start
 
 ```bash
@@ -142,6 +151,7 @@ HA_TOKEN=your_home_assistant_long_lived_access_token
 data/home-model-overlay.local.json
 data/command-audit.local.jsonl
 data/learning-memory.local.json
+data/provider-snapshot.local.json
 ```
 
 这些文件是本地家庭状态和用户偏好数据，不应提交到 GitHub。
@@ -172,6 +182,9 @@ PATCH /api/learning/candidates/:candidateId
 DELETE /api/learning/candidates/:candidateId
 
 GET  /api/agents/snapshot
+
+GET  /api/onboarding/plan
+POST /api/onboarding/snapshot
 ```
 
 `/api/hcm/command` 是当前真实 HCM 主链路入口：
@@ -204,11 +217,11 @@ Context Snapshot
 - `v0.7` Intent Precision & Explainability
 - `v0.8` HA Service Simulation & Debug Safety
 - `v0.9` Shadow Multi-Agent Runtime
+- `v0.11` Provider-to-HCM Onboarding & Adapter Abstraction
 
 后续重点：
 
 - `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
-- `v0.11` Provider-to-HCM Onboarding & Adapter Abstraction：设备接入 HA 后，自动/半自动进入 Harness House。
 - `v0.12` Intent Accuracy Engine：结合人在位置、历史偏好、设备状态和歧义检测提高意图精度。
 - `v0.13` Home Digital Twin State Layers：区分 selection / occupancy / execution / alert / preview 视觉层。
 - `v0.14` Policy & Permission System：设备、房间、时间、语音入口、人在状态纳入权限系统。

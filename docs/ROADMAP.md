@@ -560,6 +560,64 @@ Learning/Diagnostics 后台观察
 - 断网/断电恢复测试。
 - 实体重命名/删除测试。
 
+### v0.11 - Provider-to-HCM Onboarding & Adapter Abstraction
+
+状态：已完成。按当前研发节奏先于 v0.10 实现。
+
+目标：
+
+当新设备先接入 Home Assistant 或其它 provider 后，Harness House 可以自动/半自动把 provider 原始设备靠近 HCM 范式，而不是每新增一种设备都改代码。
+
+主流程：
+
+```text
+Provider Snapshot A
+  -> Provider Snapshot B
+  -> Provider Diff
+  -> HCM Mapping
+  -> Onboarding Candidate
+  -> Safety Classification
+  -> Service Simulation Probe
+  -> Overlay Proposal
+  -> User Review
+```
+
+新增能力：
+
+- `diffProviderGraphs`：检测 provider device/entity/area/state 的新增、删除、变更。
+- `planProviderOnboarding`：基于 previous graph、next graph 和 HCM 生成接入计划。
+- 新增设备候选分类：
+  - `allow_auto_candidate`
+  - `review`
+  - `protect`
+  - `read_only`
+- 新增低风险明确设备可以生成自动开放候选。
+- 高风险、隐私、配置、语义不清设备默认 protect/review。
+- Entity 删除会生成 `remove_from_planner`，防止 LLM 继续使用不存在能力。
+- supported_features 变化会进入 provider diff 和 HCM binding changed。
+- Onboarding simulation probe 只调用本地 HA Service Simulator，不控制真实设备。
+- `/api/onboarding/plan`：读取当前 HA graph，和 baseline 比较后返回接入计划。
+- `/api/onboarding/snapshot`：记录当前 HA graph 为 provider baseline。
+- Home Model 面板展示 Onboarding 摘要和候选样本。
+
+验收：
+
+- 不需要真实新增设备，也能用 mock provider graph 覆盖新增设备流程。已覆盖。
+- 新增明确灯具可生成 `allow_auto_candidate`。已覆盖。
+- 新增燃气、摄像头、密码/配置类能力默认 `protect`。已覆盖。
+- 设备改名/换房间不会丢失 entity identity。已覆盖。
+- supported_features 变化会触发能力边界更新。已覆盖。
+- entity 删除后生成移除计划，不再暴露给 planner。已覆盖。
+- 所有 onboarding 测试不控制真实 HA。已覆盖。
+
+测试要求：
+
+- Provider graph diff tests。
+- Onboarding planner tests。
+- Risk classification tests。
+- Simulation probe tests。
+- Rename/move/remove regression tests。
+
 ### v1.0 - Open Source AI Smart Home Framework
 
 目标：

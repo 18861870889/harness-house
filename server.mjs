@@ -4,6 +4,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
 import { runAgentRuntime } from "./src/agentRuntime.js";
+import { planProviderOnboarding } from "./src/providerOnboarding.js";
+import { createProviderSnapshot } from "./src/providerSync.js";
 import {
   applyDefaultRunPolicy,
   applyHcmOverlay,
@@ -38,6 +40,7 @@ const port = getCliPort() ?? Number(process.env.PORT ?? 5173);
 const hcmOverlayPath = resolve(process.cwd(), process.env.HARNESS_HCM_OVERLAY_PATH || "data/home-model-overlay.local.json");
 const commandAuditPath = resolve(process.cwd(), process.env.HARNESS_COMMAND_AUDIT_PATH || "data/command-audit.local.jsonl");
 const learningMemoryPath = resolve(process.cwd(), process.env.HARNESS_LEARNING_MEMORY_PATH || "data/learning-memory.local.json");
+const providerSnapshotPath = resolve(process.cwd(), process.env.HARNESS_PROVIDER_SNAPSHOT_PATH || "data/provider-snapshot.local.json");
 const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
@@ -216,6 +219,67 @@ app.get("/api/agents/snapshot", async (_request, response) => {
   } catch (error) {
     response.status(502).json({
       error: error.message || "Agent snapshot failed",
+    });
+  }
+});
+
+app.get("/api/onboarding/plan", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const nextGraph = await homeAssistantAdapter.discoverDeviceGraph();
+    const previous = readProviderSnapshotRecord();
+    const currentSnapshot = createProviderSnapshot(nextGraph);
+    response.json({
+      previousSnapshotHash: previous?.snapshot?.hash ?? null,
+      currentSnapshotHash: currentSnapshot.hash,
+      hasBaseline: Boolean(previous?.graph),
+      plan: planProviderOnboarding({
+        previousGraph: previous?.graph,
+        nextGraph,
+      }),
+    });
+  } catch (error) {
+    response.status(error.statusCode || 502).json({
+      error: error.message || "Provider onboarding plan failed",
+    });
+  }
+});
+
+app.post("/api/onboarding/snapshot", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({
+      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
+    });
+    return;
+  }
+
+  try {
+    const graph = await homeAssistantAdapter.discoverDeviceGraph();
+    const snapshot = createProviderSnapshot(graph);
+    const record = {
+      version: "0.1",
+      updatedAt: new Date().toISOString(),
+      provider: graph.provider ?? { id: HOME_ASSISTANT_ADAPTER_ID, name: "Home Assistant" },
+      snapshot,
+      graph,
+    };
+    writeProviderSnapshotRecord(record);
+    response.json({
+      updatedAt: record.updatedAt,
+      provider: record.provider,
+      snapshotHash: snapshot.hash,
+      deviceCount: graph.devices?.length ?? 0,
+      entityCount: graph.entities?.length ?? 0,
+    });
+  } catch (error) {
+    response.status(error.statusCode || 502).json({
+      error: error.message || "Provider onboarding snapshot failed",
     });
   }
 });
@@ -476,6 +540,20 @@ function readLearningMemory() {
 function writeLearningMemory(memory) {
   mkdirSync(dirname(learningMemoryPath), { recursive: true });
   writeFileSync(learningMemoryPath, `${JSON.stringify(memory, null, 2)}\n`);
+}
+
+function readProviderSnapshotRecord() {
+  if (!existsSync(providerSnapshotPath)) return null;
+  try {
+    return JSON.parse(readFileSync(providerSnapshotPath, "utf8"));
+  } catch (error) {
+    throw new Error(`Provider snapshot file is invalid JSON: ${error.message}`);
+  }
+}
+
+function writeProviderSnapshotRecord(record) {
+  mkdirSync(dirname(providerSnapshotPath), { recursive: true });
+  writeFileSync(providerSnapshotPath, `${JSON.stringify(record, null, 2)}\n`);
 }
 
 function updateLearningMemory(auditEntry) {

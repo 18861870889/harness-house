@@ -108,6 +108,26 @@ export async function getAgentSnapshot() {
   return payload;
 }
 
+export async function getOnboardingPlan() {
+  const response = await fetch("/api/onboarding/plan");
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Onboarding plan request failed ${response.status}`);
+  }
+  return payload;
+}
+
+export async function recordOnboardingSnapshot() {
+  const response = await fetch("/api/onboarding/snapshot", { method: "POST" });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `Onboarding snapshot request failed ${response.status}`);
+  }
+  return payload;
+}
+
 export async function updateLearningCandidate({ candidateId, status, note }) {
   const response = await fetch(`/api/learning/candidates/${encodeURIComponent(candidateId)}`, {
     method: "PATCH",
