@@ -86,10 +86,22 @@ function summarizeAgents(agents) {
           protectedCandidates: agents.agents.mapping.summary?.protectedCandidates ?? 0,
         }
       : null,
+    learning: agents.agents?.learning
+      ? {
+          candidateCount: agents.agents.learning.candidates?.length ?? 0,
+          autoAppliedCount: agents.agents.learning.summary?.autoAppliedCount ?? 0,
+        }
+      : null,
     diagnostics: agents.agents?.diagnostics
       ? {
           findingCount: agents.agents.diagnostics.findings?.length ?? 0,
           highFindings: agents.agents.diagnostics.findings?.filter((finding) => finding.severity === "high").length ?? 0,
+        }
+      : null,
+    test: agents.agents?.test
+      ? {
+          generatedCount: agents.agents.test.testCases?.length ?? 0,
+          safetyCount: agents.agents.test.summary?.safetyCount ?? 0,
         }
       : null,
   };

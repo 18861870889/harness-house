@@ -126,8 +126,10 @@ describe("command runtime", () => {
               likelySpace: { id: "study", name: "书房", occupied: true, confidence: 0.92 },
               spaces: [{ id: "study", occupied: true }],
             },
+            learning: { candidates: [{ id: "candidate_movie" }], summary: { autoAppliedCount: 0 } },
             mapping: { candidates: [{ thingId: "camera" }], summary: { protectedCandidates: 1 } },
             diagnostics: { findings: [{ id: "latency_budget", severity: "high" }] },
+            test: { testCases: [{ id: "dry_run_light" }], summary: { safetyCount: 1 } },
           },
         },
       },
@@ -138,8 +140,10 @@ describe("command runtime", () => {
       mode: "shadow",
       summary: { agentCount: 3 },
       context: { likelySpace: { id: "study", confidence: 0.92 }, occupiedSpaces: 1 },
+      learning: { candidateCount: 1, autoAppliedCount: 0 },
       mapping: { candidateCount: 1, protectedCandidates: 1 },
       diagnostics: { findingCount: 1, highFindings: 1 },
+      test: { generatedCount: 1, safetyCount: 1 },
     });
   });
 });

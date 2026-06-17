@@ -116,7 +116,7 @@ function statusForDevice(device) {
     case "fan":
       return device.on ? `${device.speed || 1}档` : "关";
     case "curtain":
-      return `${device.position}%`;
+      return `${safePercent(device.position, 0)}%`;
     case "tv":
       return device.on ? "开" : "关";
     case "robot_vacuum":
@@ -136,7 +136,7 @@ function statusForDevice(device) {
     case "dryer":
       return device.status === "running" ? `${device.minutesLeft}m` : device.status;
     case "drying_rack":
-      return `${device.position}%`;
+      return `${safePercent(device.position, 0)}%`;
     default:
       return "";
   }
@@ -486,7 +486,7 @@ function addLightDevice(group, device, x, z, animated) {
   animated.push({ kind: "light", object: bulb, active });
 
   if (active) {
-    const light = new THREE.PointLight(0xffb74d, Math.max(0.6, device.brightness / 60), 3.2);
+    const light = new THREE.PointLight(0xffb74d, Math.max(0.6, safeNumber(device.brightness, 60) / 60), 3.2);
     light.position.set(x, 1.1, z);
     group.add(light);
     const glow = new THREE.Mesh(
@@ -522,7 +522,7 @@ function addFanDevice(group, device, x, z, animated) {
 }
 
 function addCurtainDevice(group, device, x, z) {
-  const openness = device.position / 100;
+  const openness = safePercent(device.position, 0) / 100;
   const rail = new THREE.Mesh(
     new THREE.BoxGeometry(1.35, 0.04, 0.05),
     new THREE.MeshStandardMaterial({ color: 0xd1d5db }),
@@ -542,6 +542,14 @@ function addCurtainDevice(group, device, x, z) {
   left.position.set(x - 0.38, 0.48, z);
   right.position.set(x + 0.38, 0.48, z);
   group.add(left, right);
+}
+
+function safeNumber(value, fallback) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function safePercent(value, fallback) {
+  return Math.max(0, Math.min(100, safeNumber(value, fallback)));
 }
 
 function addTvDevice(group, device, x, z) {

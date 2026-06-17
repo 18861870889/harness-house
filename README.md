@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.9 alpha`
+当前进度：`v0.9`
 
 ## Core Idea
 
@@ -73,10 +73,13 @@ Provider Raw Graph
 - Command audit：记录每条真实 HCM 命令的阶段、耗时、计划、执行和解释摘要。
 - Replay：历史命令可用 dry-run 回放。
 - Learning Layer：从 `no_action` / `rejected` / `partial_failure` 生成 shadow correction candidates。
-- Multi-Agent Runtime `v0.9 alpha`：
+- Multi-Agent Runtime `v0.9`：
   - `Context Agent`：从 presence / motion / door sensor 推断房间占用置信度。
+  - `Learning Agent`：整理 shadow learning candidates，不自动应用。
   - `Mapping Agent`：生成设备接入与能力边界建议。
   - `Diagnostics Agent`：发现离线设备、失败指令、service simulator 拦截和 2 秒预算问题。
+  - `Test Agent`：基于 HCM 生成 dry-run / safety / state query 回归测试建议。
+- 每个后台 agent 独立记录耗时和预算状态；单个 agent 失败不会阻断主链路。
 - Agents 目前全部是 shadow mode，不写 overlay、不执行设备。
 
 ## Quick Start
@@ -200,7 +203,7 @@ Context Snapshot
 - `v0.6` Learning Layer Alpha
 - `v0.7` Intent Precision & Explainability
 - `v0.8` HA Service Simulation & Debug Safety
-- `v0.9 alpha` Shadow Multi-Agent Runtime
+- `v0.9` Shadow Multi-Agent Runtime
 
 后续重点：
 

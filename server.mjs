@@ -622,6 +622,7 @@ async function runHcmCommandPipeline(payload) {
     const agents = runAgentRuntime({
       home,
       auditEntries: readCommandAuditEntries(20),
+      learningMemory: readLearningMemory(),
     });
 
     const planner = {
@@ -667,6 +668,7 @@ async function buildAgentSnapshot() {
   return runAgentRuntime({
     home,
     auditEntries: readCommandAuditEntries(20),
+    learningMemory: readLearningMemory(),
   });
 }
 

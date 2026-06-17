@@ -73,8 +73,12 @@
 - 玄关人体传感器只能作为 motion 证据，不能等同于长期人在。
 - Mapping Agent 只能生成 shadow-mode 接入/边界建议，不能直接修改 overlay。
 - Mapping Agent 必须同时读取 unresolved bindings 和 HCM capability policy。
+- Learning Agent 只能整理 shadow learning candidates，`autoApply` 必须为 false。
 - Diagnostics Agent 必须能发现近期 rejected / partial_failure / error。
 - Diagnostics Agent 必须能发现 HA service simulator 拦截。
+- Test Agent 必须生成 dry-run control、safety rejection、state query 三类建议用例。
+- 单个 agent 抛错必须被隔离，不能阻断其它 agent snapshot。
+- agent 超出预算必须标记 `timedOut`，不能直接影响主链路执行。
 - 命令 audit 只保存 agent 摘要，不保存过大的完整 snapshot。
 - UI Agents 面板展示 shadow 状态，不能提供直接执行按钮。
 

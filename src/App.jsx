@@ -1121,8 +1121,10 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
   const candidates = memory?.topCandidates ?? [];
   const corrections = memory?.correctionCandidates ?? [];
   const context = agents?.agents?.context;
+  const learning = agents?.agents?.learning;
   const mapping = agents?.agents?.mapping;
   const diagnostics = agents?.agents?.diagnostics;
+  const testAgent = agents?.agents?.test;
   return (
     <section className="panel intelligence-panel">
       <div className="panel-title">
@@ -1146,6 +1148,11 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
             </small>
           </div>
           <div className="agent-card">
+            <span>Learning</span>
+            <strong>{learning?.candidates?.length ?? 0}</strong>
+            <small>shadow 候选</small>
+          </div>
+          <div className="agent-card">
             <span>Mapping</span>
             <strong>{mapping?.candidates?.length ?? 0}</strong>
             <small>接入/边界建议</small>
@@ -1154,6 +1161,11 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
             <span>Diagnostics</span>
             <strong>{diagnostics?.findings?.length ?? 0}</strong>
             <small>运行发现</small>
+          </div>
+          <div className="agent-card">
+            <span>Test</span>
+            <strong>{testAgent?.testCases?.length ?? 0}</strong>
+            <small>dry-run 用例</small>
           </div>
         </div>
       )}
@@ -1174,6 +1186,17 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
             <div className={`agent-item severity-${finding.severity}`} key={finding.id}>
               <span>{finding.title}</span>
               <strong>{finding.message}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      {testAgent?.testCases?.length > 0 && (
+        <div className="agent-list">
+          {testAgent.testCases.slice(0, 2).map((testCase) => (
+            <div className="agent-item severity-low" key={testCase.id}>
+              <span>{testCase.priority}</span>
+              <strong>{testCase.input}</strong>
+              <small>{testCase.type}</small>
             </div>
           ))}
         </div>

@@ -1,29 +1,77 @@
 const AGENT_RUNTIME_VERSION = "0.1";
+const TEST_AGENT_SMOKE_DOMAINS = new Set(["light", "switch", "fan", "cover", "climate", "media_player"]);
+const TEST_AGENT_PROTECTED_TYPES = new Set(["camera", "pet_feeder", "gas_heater", "water_heater"]);
+const UNCLEAR_TEST_TARGET_PATTERN = /未定义|未绑定|未知|未命名|unbound|undefined|unknown/i;
 
-export function runAgentRuntime({ home, auditEntries = [], generatedAt = new Date().toISOString() } = {}) {
-  const context = runContextAgent({ home, generatedAt });
-  const mapping = runMappingAgent({ home, generatedAt });
-  const diagnostics = runDiagnosticsAgent({ home, auditEntries, generatedAt });
+export function runAgentRuntime({
+  home,
+  auditEntries = [],
+  learningMemory,
+  generatedAt = new Date().toISOString(),
+  now = () => Date.now(),
+} = {}) {
+  const context = runShadowAgent("context", () => runContextAgent({ home, generatedAt }), { now });
+  const learning = runShadowAgent("learning", () => runLearningAgent({ learningMemory, auditEntries, generatedAt }), { now });
+  const mapping = runShadowAgent("mapping", () => runMappingAgent({ home, generatedAt }), { now });
+  const diagnostics = runShadowAgent("diagnostics", () => runDiagnosticsAgent({ home, auditEntries, generatedAt }), { now });
+  const test = runShadowAgent("test", () => runTestAgent({ home, generatedAt }), { now });
+  const agentList = [context, learning, mapping, diagnostics, test];
 
   return {
     version: AGENT_RUNTIME_VERSION,
     generatedAt,
     mode: "shadow",
     summary: {
-      agentCount: 3,
-      occupancySpaces: context.spaces.length,
-      mappingCandidates: mapping.candidates.length,
-      diagnosticsFindings: diagnostics.findings.length,
+      agentCount: agentList.length,
+      okAgents: agentList.filter((agent) => agent.status === "ok").length,
+      failedAgents: agentList.filter((agent) => agent.status !== "ok").length,
+      timedOutAgents: agentList.filter((agent) => agent.timedOut).length,
+      occupancySpaces: context.spaces?.length ?? 0,
+      learningCandidates: learning.candidates?.length ?? 0,
+      mappingCandidates: mapping.candidates?.length ?? 0,
+      diagnosticsFindings: diagnostics.findings?.length ?? 0,
+      generatedTests: test.testCases?.length ?? 0,
       actionRequired:
-        mapping.candidates.some((candidate) => candidate.severity !== "low") ||
-        diagnostics.findings.some((finding) => finding.severity !== "low"),
+        (mapping.candidates ?? []).some((candidate) => candidate.severity !== "low") ||
+        (diagnostics.findings ?? []).some((finding) => finding.severity !== "low") ||
+        (learning.candidates ?? []).some((candidate) => candidate.status === "shadow"),
     },
     agents: {
       context,
+      learning,
       mapping,
       diagnostics,
+      test,
     },
   };
+}
+
+export function runShadowAgent(agentId, fn, { now = () => Date.now(), budgetMs = 50 } = {}) {
+  const startedAt = now();
+  try {
+    const result = fn();
+    const latencyMs = Math.max(0, now() - startedAt);
+    return {
+      ...result,
+      agentId,
+      latencyMs,
+      budgetMs,
+      timedOut: latencyMs > budgetMs,
+      status: result?.status === "error" ? "error" : "ok",
+    };
+  } catch (error) {
+    return {
+      id: `${agentId}_agent`,
+      agentId,
+      name: agentId,
+      status: "error",
+      mode: "shadow",
+      latencyMs: Math.max(0, now() - startedAt),
+      budgetMs,
+      timedOut: false,
+      error: error.message,
+    };
+  }
 }
 
 export function runContextAgent({ home, generatedAt = new Date().toISOString() } = {}) {
@@ -137,6 +185,48 @@ export function runMappingAgent({ home, generatedAt = new Date().toISOString() }
       unresolvedThings: unresolvedByThing.size,
       genericThingCount: genericThings.length,
       protectedCandidates: candidates.filter((candidate) => ["high", "critical"].includes(candidate.severity)).length,
+    },
+  };
+}
+
+export function runLearningAgent({ learningMemory, auditEntries = [], generatedAt = new Date().toISOString() } = {}) {
+  const candidates = (learningMemory?.candidates ?? [])
+    .filter((candidate) => candidate.status !== "ignored")
+    .slice(0, 8)
+    .map((candidate) => ({
+      id: candidate.id,
+      type: candidate.type,
+      status: candidate.status,
+      input: candidate.input,
+      confidence: candidate.confidence,
+      count: candidate.count,
+      actionCount: candidate.actions?.length ?? 0,
+      autoApply: false,
+    }));
+  const ignoredCount = (learningMemory?.candidates ?? []).filter((candidate) => candidate.status === "ignored").length;
+  const recentSuccessfulPatterns = auditEntries
+    .filter((entry) => ["executed", "dry_run"].includes(entry.status) && (entry.execution?.services?.length ?? 0) > 0)
+    .slice(0, 6)
+    .map((entry) => ({
+      commandId: entry.commandId,
+      input: entry.input,
+      serviceCount: entry.execution?.services?.length ?? 0,
+      latencyMs: entry.latencyMs,
+    }));
+
+  return {
+    id: "learning_agent",
+    name: "Learning Agent",
+    status: "ok",
+    mode: "shadow",
+    generatedAt,
+    candidates,
+    recentSuccessfulPatterns,
+    summary: {
+      candidateCount: candidates.length,
+      ignoredCount,
+      observationCount: learningMemory?.observations?.length ?? 0,
+      autoAppliedCount: 0,
     },
   };
 }
@@ -265,6 +355,101 @@ export function runDiagnosticsAgent({ home, auditEntries = [], generatedAt = new
   };
 }
 
+export function runTestAgent({ home, generatedAt = new Date().toISOString() } = {}) {
+  const testCases = [];
+  const things = home?.things ?? [];
+
+  for (const thing of things) {
+    const capability = (thing.capabilities ?? []).find(
+      (candidate) =>
+        !TEST_AGENT_PROTECTED_TYPES.has(thing.type) &&
+        !UNCLEAR_TEST_TARGET_PATTERN.test(`${thing.name} ${candidate.name}`) &&
+        candidate.policy?.autoExecutable &&
+        candidate.policy?.risk === "low" &&
+        candidate.kind === "control" &&
+        TEST_AGENT_SMOKE_DOMAINS.has(candidate.binding?.domain),
+    );
+    if (!capability) continue;
+    testCases.push({
+      id: `dry_run_${thing.id}_${capability.id}`,
+      type: "dry_run_control",
+      priority: "smoke",
+      input: commandExampleForCapability(thing, capability),
+      expected: {
+        status: "dry_run",
+        thingId: thing.id,
+        capabilityId: capability.id,
+        serviceDomain: capability.binding.domain,
+      },
+      safety: {
+        realDeviceControl: false,
+        reason: "Test Agent 只生成 dry-run 回归建议",
+      },
+    });
+    if (testCases.length >= 6) break;
+  }
+
+  for (const thing of things) {
+    const protectedCapability = (thing.capabilities ?? []).find(
+      (capability) => capability.policy?.risk && capability.policy.risk !== "low",
+    );
+    if (!protectedCapability) continue;
+    testCases.push({
+      id: `reject_${thing.id}_${protectedCapability.id}`,
+      type: "safety_rejection",
+      priority: "safety",
+      input: `打开${thing.name}`,
+      expected: {
+        status: "rejected",
+        thingId: thing.id,
+        capabilityId: protectedCapability.id,
+      },
+      safety: {
+        realDeviceControl: false,
+        reason: "高风险/敏感能力必须保持拦截",
+      },
+    });
+    if (testCases.filter((item) => item.type === "safety_rejection").length >= 4) break;
+  }
+
+  for (const thing of things) {
+    const sensor = (thing.capabilities ?? []).find((capability) => capability.kind === "sensor");
+    if (!sensor) continue;
+    testCases.push({
+      id: `state_query_${thing.id}_${sensor.id}`,
+      type: "state_query",
+      priority: "regression",
+      input: `${thing.name}目前是什么状态`,
+      expected: {
+        status: "answered",
+        thingId: thing.id,
+      },
+      safety: {
+        realDeviceControl: false,
+        reason: "状态查询只读，不执行设备动作",
+      },
+    });
+    if (testCases.filter((item) => item.type === "state_query").length >= 3) break;
+  }
+
+  const selectedTestCases = testCases.slice(0, 12);
+
+  return {
+    id: "test_agent",
+    name: "Test Agent",
+    status: "ok",
+    mode: "shadow",
+    generatedAt,
+    testCases: selectedTestCases,
+    summary: {
+      generatedCount: selectedTestCases.length,
+      smokeCount: selectedTestCases.filter((item) => item.priority === "smoke").length,
+      safetyCount: selectedTestCases.filter((item) => item.priority === "safety").length,
+      readOnlyCount: selectedTestCases.filter((item) => item.type === "state_query").length,
+    },
+  };
+}
+
 function occupancyEvidenceForThing(thing, generatedAt) {
   const type = thing.type;
   if (!["presence_sensor", "motion_sensor", "door_sensor"].includes(type)) return null;
@@ -323,6 +508,14 @@ function mappingActionForSeverity(severity) {
   if (severity === "critical") return "protect";
   if (severity === "medium") return "review";
   return "auto_candidate";
+}
+
+function commandExampleForCapability(thing, capability) {
+  if (capability.valueType === "number" && capability.binding?.domain === "climate") return `${thing.name}调到26度`;
+  if (capability.binding?.domain === "media_player") return `打开${thing.name}`;
+  if (capability.valueType === "number") return `设置${thing.name}`;
+  if (capability.valueType === "boolean") return `打开${thing.name}`;
+  return `执行${thing.name}${capability.name}`;
 }
 
 function topEntry(record) {
