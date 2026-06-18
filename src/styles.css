@@ -1,19 +1,21 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0d1117;
-  color: #e5edf7;
-  --panel: rgba(15, 23, 42, 0.82);
-  --panel-strong: rgba(12, 18, 29, 0.94);
-  --line: rgba(148, 163, 184, 0.24);
-  --text: #e5edf7;
-  --muted: #96a3b5;
-  --blue: #7fb3ff;
-  --cyan: #5eead4;
-  --green: #86efac;
-  --amber: #fbbf24;
-  --red: #f87171;
+  background: #f2f7f5;
+  color: #183431;
+  --panel: rgba(255, 255, 255, 0.94);
+  --panel-strong: #ffffff;
+  --surface: #f5faf8;
+  --surface-strong: #eaf5f1;
+  --line: rgba(55, 104, 97, 0.18);
+  --text: #183431;
+  --muted: #687c78;
+  --blue: #397f92;
+  --cyan: #168f83;
+  --green: #258d66;
+  --amber: #c98216;
+  --red: #d95852;
 }
 
 * {
@@ -30,6 +32,7 @@ body,
 
 body {
   overflow: hidden;
+  background: #f2f7f5;
 }
 
 button,
@@ -47,7 +50,7 @@ button {
   height: 100%;
   min-height: 100vh;
   overflow: hidden;
-  background: #0d1117;
+  background: #f2f7f5;
 }
 
 .scene-panel {
@@ -81,7 +84,7 @@ button {
   z-index: 2;
   pointer-events: none;
   transform: translateX(-50%);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 28px rgba(36, 77, 70, 0.1);
 }
 
 .scene-hud {
@@ -90,9 +93,9 @@ button {
   gap: 10px;
   align-items: center;
   padding: 9px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid rgba(69, 111, 104, 0.24);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(255, 255, 255, 0.72);
   color: var(--muted);
 }
 
@@ -103,12 +106,12 @@ button {
 .scene-controls-hint {
   bottom: 82px;
   padding: 8px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(69, 111, 104, 0.2);
   border-radius: 8px;
-  color: #cbd5e1;
+  color: #5f7470;
   font-size: 12px;
   font-weight: 700;
-  background: rgba(15, 23, 42, 0.58);
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .left-rail,
@@ -124,6 +127,7 @@ button {
   min-width: 310px;
   overflow: auto;
   scrollbar-width: thin;
+  scrollbar-color: rgba(22, 143, 131, 0.3) transparent;
 }
 
 .left-rail {
@@ -139,8 +143,12 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(36, 77, 70, 0.08);
+}
+
+.panel:hover,
+.product-header:hover {
+  border-color: rgba(55, 104, 97, 0.26);
 }
 
 .product-header {
@@ -156,10 +164,10 @@ button {
   width: 38px;
   height: 38px;
   place-items: center;
-  border: 1px solid rgba(94, 234, 212, 0.35);
+  border: 1px solid #238f80;
   border-radius: 8px;
-  color: var(--cyan);
-  background: rgba(20, 184, 166, 0.1);
+  color: #ffffff;
+  background: #238f80;
 }
 
 .product-header h1 {
@@ -180,12 +188,12 @@ button {
   align-items: center;
   min-width: 66px;
   padding: 7px 8px;
-  border: 1px solid rgba(134, 239, 172, 0.32);
+  border: 1px solid rgba(37, 141, 102, 0.24);
   border-radius: 8px;
   color: var(--green);
   font-size: 12px;
   font-weight: 700;
-  background: rgba(34, 197, 94, 0.08);
+  background: rgba(37, 141, 102, 0.08);
 }
 
 .live-dot {
@@ -193,7 +201,7 @@ button {
   height: 7px;
   border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 12px rgba(134, 239, 172, 0.75);
+  box-shadow: 0 0 0 4px rgba(37, 141, 102, 0.14);
 }
 
 .header-facts {
@@ -210,10 +218,10 @@ button {
   align-items: center;
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(69, 111, 104, 0.18);
   border-radius: 8px;
   color: var(--muted);
-  background: rgba(15, 23, 42, 0.54);
+  background: rgba(255, 255, 255, 0.54);
 }
 
 .fact svg {
@@ -287,9 +295,9 @@ button {
 .agent-card {
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(69, 111, 104, 0.18);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .agent-card span,
@@ -326,9 +334,9 @@ button {
   gap: 3px 8px;
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .agent-item span,
@@ -370,7 +378,7 @@ button {
   padding: 9px;
   border: 1px solid rgba(94, 234, 212, 0.18);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.48);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .onboarding-header,
@@ -404,12 +412,12 @@ button {
   flex: 1;
   min-width: 0;
   padding: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(69, 111, 104, 0.14);
   border-radius: 7px;
   color: var(--muted);
   font-size: 10px;
   text-align: center;
-  background: rgba(2, 6, 23, 0.18);
+  background: rgba(224, 238, 233, 0.18);
 }
 
 .onboarding-panel > small {
@@ -428,9 +436,9 @@ button {
   gap: 3px 7px;
   min-width: 0;
   padding: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 7px;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(255, 255, 255, 0.45);
 }
 
 .onboarding-item span,
@@ -482,7 +490,7 @@ button {
 .plan-summary,
 .confirm-panel p {
   margin: 0;
-  color: #cbd5e1;
+  color: #5f7470;
   font-size: 13px;
   line-height: 1.55;
 }
@@ -497,9 +505,9 @@ button {
 .metric {
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(69, 111, 104, 0.18);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .metric span {
@@ -538,9 +546,9 @@ button {
 .send-button,
 .confirm-button,
 .cancel-button {
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(69, 111, 104, 0.22);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.62);
+  background: rgba(255, 255, 255, 0.62);
   cursor: pointer;
   transition:
     border-color 140ms ease,
@@ -555,7 +563,7 @@ button {
 .send-button:hover,
 .confirm-button:hover,
 .cancel-button:hover {
-  border-color: rgba(125, 211, 252, 0.72);
+  border-color: rgba(22, 143, 131, 0.48);
 }
 
 .room-button:active,
@@ -575,8 +583,8 @@ button {
 }
 
 .room-button.selected {
-  border-color: rgba(94, 234, 212, 0.72);
-  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(22, 143, 131, 0.54);
+  background: #e5f4f0;
 }
 
 .room-button span,
@@ -616,7 +624,7 @@ button {
   padding: 8px;
   border: 1px solid rgba(94, 234, 212, 0.18);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .explanation-title {
@@ -643,9 +651,9 @@ button {
 .step,
 .audit-item {
   min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .device-row {
@@ -697,11 +705,12 @@ button {
 }
 
 .risk-sensitive .device-state {
-  color: #c4b5fd;
+  color: #7566a8;
 }
 
 .console-panel {
-  min-height: 286px;
+  min-height: 338px;
+  flex: 0 0 auto;
 }
 
 .working {
@@ -733,7 +742,7 @@ button {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
-  background: rgba(15, 23, 42, 0.46);
+  background: rgba(255, 255, 255, 0.46);
 }
 
 .speech-status.error {
@@ -779,9 +788,9 @@ button {
   gap: 8px;
   align-items: center;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .automation-item strong,
@@ -836,14 +845,14 @@ button {
   max-width: min(92%, 430px);
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .message.user .message-bubble {
-  border-color: rgba(125, 211, 252, 0.28);
-  background: rgba(14, 116, 144, 0.2);
+  border-color: rgba(22, 143, 131, 0.25);
+  background: #e5f4f0;
 }
 
 .message-bubble p {
@@ -887,15 +896,16 @@ button {
   min-width: 0;
   height: 42px;
   padding: 0 12px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid rgba(69, 111, 104, 0.24);
   border-radius: 8px;
   outline: none;
   color: var(--text);
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .command-form input:focus {
-  border-color: rgba(94, 234, 212, 0.7);
+  border-color: rgba(22, 143, 131, 0.62);
+  box-shadow: 0 0 0 3px rgba(22, 143, 131, 0.1);
 }
 
 .send-button,
@@ -913,10 +923,10 @@ button {
   height: 28px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(69, 111, 104, 0.22);
   border-radius: 8px;
   color: var(--cyan);
-  background: rgba(15, 23, 42, 0.62);
+  background: rgba(255, 255, 255, 0.62);
   cursor: pointer;
 }
 
@@ -958,11 +968,11 @@ button {
 .hcm-area-strip span {
   flex: 0 0 auto;
   padding: 5px 7px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
   color: var(--muted);
   font-size: 11px;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .hcm-area-strip strong {
@@ -1006,7 +1016,7 @@ button {
 }
 
 .default-run-summary strong {
-  color: #bbf7d0;
+  color: #287a5a;
 }
 
 .default-run-summary span {
@@ -1016,9 +1026,9 @@ button {
 .binding-review {
   margin-top: 9px;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.48);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .review-header {
@@ -1045,12 +1055,12 @@ button {
 .risk-chip {
   flex: 0 0 auto;
   padding: 4px 6px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(69, 111, 104, 0.18);
   border-radius: 8px;
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .risk-chip.risk-medium,
@@ -1078,7 +1088,7 @@ button {
   padding: 8px;
   border: 1px solid rgba(94, 234, 212, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.44);
+  background: rgba(255, 255, 255, 0.44);
 }
 
 .boundary-header {
@@ -1104,12 +1114,12 @@ button {
 .boundary-grid span {
   min-width: 0;
   padding: 5px 6px;
-  border: 1px solid rgba(148, 163, 184, 0.13);
+  border: 1px solid rgba(69, 111, 104, 0.13);
   border-radius: 7px;
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
-  background: rgba(2, 6, 23, 0.22);
+  background: rgba(224, 238, 233, 0.22);
 }
 
 .boundary-grid strong {
@@ -1178,9 +1188,9 @@ button {
   gap: 3px 8px;
   min-width: 0;
   padding: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(69, 111, 104, 0.14);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.22);
+  background: rgba(224, 238, 233, 0.22);
 }
 
 .recommendation-item span,
@@ -1220,7 +1230,7 @@ button {
   padding: 0 7px;
   border: 1px solid rgba(248, 113, 113, 0.24);
   border-radius: 8px;
-  color: #fecaca;
+  color: #b74642;
   font-size: 10px;
   font-weight: 800;
   background: rgba(127, 29, 29, 0.18);
@@ -1233,7 +1243,7 @@ button {
 }
 
 .recommendation-item.severity-critical small {
-  color: #fecaca;
+  color: #b74642;
 }
 
 .recommendation-item.severity-high small {
@@ -1246,9 +1256,9 @@ button {
   gap: 3px 8px;
   min-width: 0;
   padding: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(69, 111, 104, 0.14);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.28);
+  background: rgba(224, 238, 233, 0.28);
 }
 
 .review-sample span,
@@ -1293,17 +1303,17 @@ button {
   min-width: 0;
   min-height: 26px;
   padding: 0 5px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(69, 111, 104, 0.18);
   border-radius: 8px;
   color: var(--text);
   font-size: 10px;
   font-weight: 800;
-  background: rgba(15, 23, 42, 0.62);
+  background: rgba(255, 255, 255, 0.62);
   cursor: pointer;
 }
 
 .review-actions button:first-child {
-  color: #bbf7d0;
+  color: #287a5a;
   border-color: rgba(34, 197, 94, 0.24);
 }
 
@@ -1313,7 +1323,7 @@ button {
 }
 
 .review-actions button:last-child {
-  color: #fecaca;
+  color: #b74642;
   border-color: rgba(248, 113, 113, 0.24);
 }
 
@@ -1324,7 +1334,7 @@ button {
 
 .review-sample.risk-high small,
 .review-sample.risk-sensitive small {
-  color: #fecaca;
+  color: #b74642;
 }
 
 .hcm-thing-list {
@@ -1344,9 +1354,9 @@ button {
   align-items: center;
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .hcm-thing span,
@@ -1391,11 +1401,11 @@ button {
 
 .learning-empty {
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(69, 111, 104, 0.14);
   border-radius: 8px;
   color: var(--muted);
   font-size: 11px;
-  background: rgba(15, 23, 42, 0.42);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .correction-header {
@@ -1421,9 +1431,9 @@ button {
   align-items: center;
   min-width: 0;
   padding: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(69, 111, 104, 0.14);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.48);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .correction-candidate {
@@ -1493,12 +1503,12 @@ button {
   min-width: 26px;
   height: 24px;
   padding: 0 7px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(69, 111, 104, 0.2);
   border-radius: 8px;
   color: var(--cyan);
   font-size: 10px;
   font-weight: 800;
-  background: rgba(15, 23, 42, 0.62);
+  background: rgba(255, 255, 255, 0.62);
   cursor: pointer;
 }
 
@@ -1515,8 +1525,8 @@ button {
 }
 
 .confirm-panel {
-  border-color: rgba(248, 113, 113, 0.38);
-  background: rgba(69, 10, 10, 0.72);
+  border-color: rgba(217, 88, 82, 0.36);
+  background: #fff2f0;
 }
 
 .confirm-actions {
@@ -1538,13 +1548,15 @@ button {
 }
 
 .confirm-button {
-  color: #dcfce7;
-  background: rgba(22, 101, 52, 0.42);
+  color: #ffffff;
+  border-color: #258d66;
+  background: #258d66;
 }
 
 .cancel-button {
-  color: #fee2e2;
-  background: rgba(127, 29, 29, 0.36);
+  color: #a73f3b;
+  border-color: rgba(217, 88, 82, 0.3);
+  background: #fff8f7;
 }
 
 .path-badge {
@@ -1560,7 +1572,7 @@ button {
 }
 
 .path-badge.llm {
-  color: #c4b5fd;
+  color: #7566a8;
   background: rgba(124, 58, 237, 0.14);
 }
 
@@ -1599,9 +1611,9 @@ button {
 
 .empty-step {
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(69, 111, 104, 0.16);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .sensor-grid {
@@ -1635,18 +1647,18 @@ button {
 
 .audit-item p {
   margin: 0;
-  color: #d8e1ee;
+  color: #314b47;
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .audit-item.success p {
-  color: #bbf7d0;
+  color: #287a5a;
 }
 
 .audit-item.cancel p {
-  color: #fecaca;
+  color: #b74642;
 }
 
 .bottom-bar {
@@ -1676,9 +1688,9 @@ button {
   align-items: center;
   min-height: 42px;
   padding: 0 12px;
-  color: #dbeafe;
-  background: rgba(15, 23, 42, 0.78);
-  backdrop-filter: blur(12px);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 6px 18px rgba(36, 77, 70, 0.08);
 }
 
 .example-chip svg {
@@ -1771,7 +1783,11 @@ button {
   }
 
   .message-list {
-    height: 260px;
+    height: 180px;
+  }
+
+  .console-panel {
+    min-height: 258px;
   }
 
   .device-list,

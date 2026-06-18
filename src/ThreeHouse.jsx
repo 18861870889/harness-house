@@ -5,15 +5,15 @@ import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import { deviceTypeNames, rooms } from "./simulator.js";
 
 const roomColor = {
-  entry: 0x27364b,
-  living: 0x2f3e58,
-  dining: 0x314657,
-  kitchen: 0x3b4554,
-  study: 0x273f4e,
-  bedroom: 0x3e3548,
-  bath: 0x2f4650,
-  balcony: 0x304a44,
-  generic: 0x334155,
+  entry: 0xe8f3f0,
+  living: 0xf4f2eb,
+  dining: 0xeaf5f1,
+  kitchen: 0xf5eee6,
+  study: 0xe7f2f3,
+  bedroom: 0xf2eeea,
+  bath: 0xe7f3f3,
+  balcony: 0xe5f2e9,
+  generic: 0xedf3f1,
 };
 
 const deviceOffsets = {
@@ -64,9 +64,9 @@ function createTextSprite(text, options = {}) {
     width = 360,
     height = 96,
     fontSize = 30,
-    background = "rgba(14, 20, 31, 0.78)",
-    foreground = "#f8fafc",
-    border = "rgba(255, 255, 255, 0.22)",
+    background = "rgba(255, 255, 255, 0.9)",
+    foreground = "#183431",
+    border = "rgba(55, 104, 97, 0.22)",
   } = options;
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -187,8 +187,8 @@ export default function ThreeHouse({ devices, sceneModel, selectedRoomId, onSele
   useEffect(() => {
     const container = containerRef.current;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
-    scene.fog = new THREE.Fog(0x0d1117, 12, 28);
+    scene.background = new THREE.Color(0xf2f7f5);
+    scene.fog = new THREE.Fog(0xf2f7f5, 13, 30);
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 100);
@@ -200,6 +200,9 @@ export default function ThreeHouse({ devices, sceneModel, selectedRoomId, onSele
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
@@ -215,20 +218,20 @@ export default function ThreeHouse({ devices, sceneModel, selectedRoomId, onSele
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
-    const ambient = new THREE.HemisphereLight(0xa9c8ff, 0x10131c, 1.35);
+    const ambient = new THREE.HemisphereLight(0xffffff, 0xc3d5d0, 2.15);
     scene.add(ambient);
 
-    const moon = new THREE.DirectionalLight(0xdbeafe, 1.9);
+    const moon = new THREE.DirectionalLight(0xfff8e8, 2.55);
     moon.position.set(5, 9, 4);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
     scene.add(moon);
 
-    const rim = new THREE.DirectionalLight(0x6ee7b7, 0.65);
+    const rim = new THREE.DirectionalLight(0x82d8c5, 0.72);
     rim.position.set(-7, 5, -3);
     scene.add(rim);
 
-    const grid = new THREE.GridHelper(18, 18, 0x223042, 0x182232);
+    const grid = new THREE.GridHelper(18, 18, 0xcadbd6, 0xe2ece9);
     grid.position.y = -0.06;
     scene.add(grid);
 
@@ -328,11 +331,11 @@ function addRooms(group, sceneRooms, selectedRoomId) {
     const preview = room.layers?.includes("preview");
     const executing = room.layers?.includes("execution");
     const floorMaterial = new THREE.MeshStandardMaterial({
-      color: active ? 0x486c82 : alert ? 0x5a3340 : roomColor[room.type] ?? 0x2d3748,
-      roughness: 0.72,
-      metalness: 0.08,
-      emissive: active ? 0x164e63 : alert ? 0x7f1d1d : preview ? 0x0f766e : executing ? 0x92400e : 0x000000,
-      emissiveIntensity: active || alert || preview || executing ? 0.22 : 0,
+      color: active ? 0xcce9e2 : alert ? 0xf2d6d2 : roomColor[room.type] ?? 0xedf3f1,
+      roughness: 0.78,
+      metalness: 0.02,
+      emissive: active ? 0x78bcae : alert ? 0xd88982 : preview ? 0x69b9aa : executing ? 0xd7a044 : 0x000000,
+      emissiveIntensity: active || alert || preview || executing ? 0.08 : 0,
     });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.1, room.depth), floorMaterial);
     floor.position.set(room.x, 0, room.z);
@@ -346,7 +349,9 @@ function addRooms(group, sceneRooms, selectedRoomId) {
       width: 240,
       height: 70,
       fontSize: 30,
-      background: active ? "rgba(14, 116, 144, 0.82)" : "rgba(15, 23, 42, 0.72)",
+      background: active ? "rgba(219, 242, 236, 0.95)" : "rgba(255, 255, 255, 0.9)",
+      foreground: active ? "#126f65" : "#314b47",
+      border: active ? "rgba(22, 143, 131, 0.48)" : "rgba(55, 104, 97, 0.2)",
     });
     label.position.set(room.x, 0.92, room.z);
     group.add(label);
@@ -388,11 +393,11 @@ function addRoomLayerBadge(group, room, { executing, preview, alert }) {
 
 function addWalls(group, room, active) {
   const material = new THREE.MeshStandardMaterial({
-    color: active ? 0x95d5ff : 0x7c8ba1,
+    color: active ? 0xb7dfd6 : 0xf9fcfb,
     transparent: true,
-    opacity: active ? 0.46 : 0.3,
-    roughness: 0.36,
-    metalness: 0.04,
+    opacity: active ? 0.62 : 0.48,
+    roughness: 0.72,
+    metalness: 0.01,
   });
   const wallHeight = 0.75;
   const wallThickness = 0.07;
@@ -414,10 +419,10 @@ function addWalls(group, room, active) {
 function addFurniture(group, sceneRooms) {
   const roomById = new Map(sceneRooms.map((room) => [room.id, room]));
   const materials = {
-    bed: new THREE.MeshStandardMaterial({ color: 0xbcae9f, roughness: 0.8 }),
-    sofa: new THREE.MeshStandardMaterial({ color: 0x9b6b73, roughness: 0.82 }),
-    table: new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.7 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.78 }),
+    bed: new THREE.MeshStandardMaterial({ color: 0xe6ddd3, roughness: 0.84 }),
+    sofa: new THREE.MeshStandardMaterial({ color: 0xa9cec5, roughness: 0.86 }),
+    table: new THREE.MeshStandardMaterial({ color: 0xcfae89, roughness: 0.8 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0xb98d67, roughness: 0.82 }),
   };
   const living = roomById.get("living");
   const dining = roomById.get("dining");
@@ -491,9 +496,9 @@ function addDevices(group, devices, selectedRoomId, animated) {
         width: 250,
         height: 72,
         fontSize: 20,
-        background: active ? "rgba(120, 53, 15, 0.82)" : "rgba(15, 23, 42, 0.68)",
-        foreground: active ? "#fff7ed" : "#e2e8f0",
-        border: active ? "rgba(251, 191, 36, 0.6)" : "rgba(148, 163, 184, 0.28)",
+        background: active ? "rgba(255, 247, 220, 0.96)" : "rgba(255, 255, 255, 0.92)",
+        foreground: active ? "#8b5d12" : "#314b47",
+        border: active ? "rgba(201, 130, 22, 0.54)" : "rgba(55, 104, 97, 0.24)",
       });
       label.scale.multiplyScalar(0.82);
       label.position.set(x, 1.1, z);

@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.16`
+当前进度：`v0.16.1`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -41,6 +41,8 @@ Provider Raw Graph
 - React + Vite + Three.js 本地界面。
 - 3D 房屋展示房间和设备状态。
 - 支持拖拽旋转、房间选择、设备点展示。
+- Morning Mint 浅色运行界面，使用独立颜色表达选择、占用、执行、预览和告警。
+- 桌面和移动端响应式布局，输入时不会卸载或重建 3D Canvas。
 - 本地 simulator 支持灯、空调、风扇、窗帘、电视、燃气热水器、传感器、猫粮机、晾衣杆、扫地机器人、洗衣机、烘干机、监控等设备模拟。
 
 ### Real LLM Planning
@@ -264,6 +266,7 @@ Context Snapshot
 - `v0.14` Policy & Permission System
 - `v0.15` Independent STT & TTS Alpha
 - `v0.16` Home Event & Automation Suggestions
+- `v0.16.1` Morning Mint UI Refresh
 
 后续重点：
 

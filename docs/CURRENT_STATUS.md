@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.16`.
+Current engineering progress: `v0.16.1`.
 
 Completed major runtime capabilities:
 
@@ -21,8 +21,21 @@ Completed major runtime capabilities:
 - Policy Gate between Safety Gate and HA Service Simulator.
 - Independent browser STT/TTS with push-to-talk, transcript confidence gating, and half-duplex output.
 - Shadow home-event capture and automation suggestions with local simulation and review decisions.
+- Morning Mint light UI refresh across the operational panels and Three.js digital twin.
+- Stable desktop/mobile layout with distinct visual semantics for selection, occupancy, preview, execution, and alerts.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
+
+## v0.16.1 UI Refresh
+
+Status: completed.
+
+- Replaced the dark glass theme with warm white, mint, neutral wood, amber, and coral semantic colors.
+- Preserved the existing three-surface information architecture and all command, speech, agent, automation, mapping, and audit controls.
+- Updated Three.js room floors, translucent walls, furniture, labels, lighting, fog, and grid for the light environment.
+- Kept selection, occupancy, preview, execution, and alert as independent digital-twin layers.
+- Stabilized Command panel sizing so the input does not overlap the following panel.
+- Verified desktop and 390px mobile layouts without horizontal overflow.
 
 ## Current Runtime Chain
 
