@@ -150,7 +150,7 @@ npm test
 npm run build
 ```
 
-## 13. 后续版本测试焦点
+## 13. v0.15-v0.16 验收与后续测试焦点
 
 ### v0.10 Real Home Pilot
 
@@ -174,11 +174,15 @@ npm run build
 - TTS 输出不能作为新命令回流。
 - 小爱、常开监听和唤醒词不在本版本测试范围。
 
+当前 alpha 范围已由 `src/speechRuntime.test.js` 覆盖核心 provider、置信度、去重和失败降级逻辑。
+
 ### v0.16 Home Event & Automation Suggestions
 
 - provider 事件只能生成 proposal，不能直接控制真实设备。
 - 自动化 proposal 必须有触发条件、目标动作、风险说明和 dry-run 结果。
 - 被用户拒绝或忽略的 proposal 不应反复打扰。
+
+当前 shadow proposal 范围已由 `src/automationSuggestionEngine.test.js` 覆盖事件 diff、最小重复次数、失败审计过滤、本地模拟和 review decision。
 
 ### v0.17 Adapter SDK
 

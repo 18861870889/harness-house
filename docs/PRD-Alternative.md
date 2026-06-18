@@ -7,11 +7,14 @@
 
 ## 当前状态校准
 
-本文是替代架构提案，保留为未来设计参考，不代表当前默认实现。当前仓库已经按 HCM-first、Home Assistant Adapter、LLM Planner、Intent Accuracy、Safety/Policy Gate、HA Service Simulator 路线推进到 `v0.14`。
+本文是替代架构提案，保留为未来设计参考，不代表当前默认实现。当前仓库已经按 HCM-first、Home Assistant Adapter、LLM Planner、Intent Accuracy、Safety/Policy Gate、HA Service Simulator 路线推进到 `v0.16`。
 
-后续可以从本文吸收的方向：
+当前已经吸收：
 
 - `v0.16` 家庭事件采集和自动化建议，先建议、模拟、审核，不直接执行。
+
+后续可以继续吸收：
+
 - `v0.17` provider portability / adapter SDK，让不同承载终端统一映射到 HCM。
 - `v1.x` MQTT 骨干、本地 LLM、强化学习或行为克隆。
 

@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.14`.
+Current engineering progress: `v0.16`.
 
 Completed major runtime capabilities:
 
@@ -19,6 +19,8 @@ Completed major runtime capabilities:
 - Intent Accuracy Engine after LLM output.
 - Digital Twin State Layers for `selection / occupancy / preview / execution / alert`.
 - Policy Gate between Safety Gate and HA Service Simulator.
+- Independent browser STT/TTS with push-to-talk, transcript confidence gating, and half-duplex output.
+- Shadow home-event capture and automation suggestions with local simulation and review decisions.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -70,6 +72,8 @@ Exit criteria:
 
 ### v0.15 - Independent STT & TTS Alpha
 
+Status: completed for the alpha scope.
+
 Goal: provide independent push-to-talk speech input and reliable speech output without Xiaoai integration.
 
 Scope:
@@ -92,6 +96,8 @@ Non-goals:
 
 ### v0.16 - Home Event & Automation Suggestions
 
+Status: completed for the shadow proposal scope.
+
 Product meaning: the house starts noticing repeatable situations and proposes automations, but it does not silently take control.
 
 Example:
@@ -102,14 +108,14 @@ Proposal: when the study becomes occupied after 20:00, turn on the study light.
 Result: show the proposal, simulate it, and wait for user review.
 ```
 
-Goal: move beyond manual commands while keeping event-driven automation suggestions in shadow mode first.
+Implemented scope:
 
 Scope:
 
-- Event ingestion from HA state changes / provider snapshots.
-- Rule proposal generation from audit and sensor patterns.
-- Preview-only automation simulations.
-- User review before any persistent automation.
+- Read-only HCM snapshot capture and state-change event history.
+- Suggestions from at least two matching successful audited actions.
+- Preview-only simulations through HCM Executor, Policy Gate, and HA Service Simulator.
+- Local `reviewed` / `ignored` decisions; no persistent provider automation is created.
 
 This version does not automatically write Home Assistant automations or execute a newly discovered rule.
 

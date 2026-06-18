@@ -9,6 +9,8 @@ import {
   Home,
   Layers3,
   LockKeyhole,
+  Mic,
+  MicOff,
   Network,
   Play,
   Power,
@@ -17,6 +19,8 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
@@ -25,19 +29,24 @@ import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
   applyDefaultRunPolicy,
+  captureAutomationEvents,
   deleteLearningCandidate,
   getAgentSnapshot,
+  getAutomationSuggestions,
   getCommandAudit,
   getHcmHome,
   getLearningMemory,
   getOnboardingPlan,
   recordOnboardingSnapshot,
+  previewAutomationSuggestion,
   replayCommandAudit,
   runHcmCommand,
   updateLearningCandidate,
+  updateAutomationSuggestion,
   updateHcmThingOverride,
 } from "./hcmClient.js";
 import { getLlmStatus, requestLlmPlan } from "./llmClient.js";
+import { assessSpeechTranscript, createBrowserSpeechInput, createBrowserSpeechOutput } from "./speechRuntime.js";
 import {
   createInitialLog,
   describeStep,
@@ -109,9 +118,21 @@ export default function App() {
   const [commandAudit, setCommandAudit] = useState([]);
   const [learningMemory, setLearningMemory] = useState(null);
   const [agentSnapshot, setAgentSnapshot] = useState(null);
+  const [automationSuggestions, setAutomationSuggestions] = useState(null);
+  const [automationActionId, setAutomationActionId] = useState(null);
   const [intelligenceActionId, setIntelligenceActionId] = useState(null);
   const [onboardingActionId, setOnboardingActionId] = useState(null);
+  const [speechState, setSpeechState] = useState({
+    listening: false,
+    speaking: false,
+    confidence: 0,
+    error: null,
+    ttsEnabled: true,
+  });
   const inputRef = useRef(null);
+  const lastSpokenMessageIdRef = useRef(null);
+  const speechInput = useMemo(() => createBrowserSpeechInput(), []);
+  const speechOutput = useMemo(() => createBrowserSpeechOutput(), []);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
   const houseSceneModel = useMemo(
@@ -162,6 +183,26 @@ export default function App() {
     getLlmStatus().then(setLlmStatus);
   }, []);
 
+  useEffect(() => {
+    const message = messages.at(-1);
+    if (!speechState.ttsEnabled || !speechOutput.supported || !message || message.role !== "assistant" || message.path === "system") return;
+    if (lastSpokenMessageIdRef.current === message.id) return;
+    lastSpokenMessageIdRef.current = message.id;
+    speechInput.stop();
+    setSpeechState((current) => ({ ...current, listening: false }));
+    speechOutput.speak(message.content, {
+      key: message.id,
+      onStart: () => setSpeechState((current) => ({ ...current, speaking: true })),
+      onEnd: () => setSpeechState((current) => ({ ...current, speaking: false })),
+      onError: (error) => setSpeechState((current) => ({ ...current, speaking: false, error: error.message })),
+    });
+  }, [messages, speechInput, speechOutput, speechState.ttsEnabled]);
+
+  useEffect(() => () => {
+    speechInput.stop();
+    speechOutput.stop();
+  }, [speechInput, speechOutput]);
+
   const refreshHcmHome = useCallback(async () => {
     setHcmStatus({ state: "loading", error: null });
     const [homeResult, onboardingResult] = await Promise.allSettled([getHcmHome(), getOnboardingPlan()]);
@@ -183,10 +224,11 @@ export default function App() {
   }, [refreshHcmHome]);
 
   const refreshIntelligence = useCallback(async () => {
-    const [auditResult, memoryResult, agentResult] = await Promise.allSettled([
+    const [auditResult, memoryResult, agentResult, automationResult] = await Promise.allSettled([
       getCommandAudit({ limit: 8 }),
       getLearningMemory(),
       getAgentSnapshot(),
+      getAutomationSuggestions(),
     ]);
     if (auditResult.status === "fulfilled") {
       setCommandAudit(auditResult.value.entries ?? []);
@@ -202,6 +244,11 @@ export default function App() {
       setAgentSnapshot(agentResult.value);
     } else {
       setAgentSnapshot(null);
+    }
+    if (automationResult.status === "fulfilled") {
+      setAutomationSuggestions(automationResult.value);
+    } else {
+      setAutomationSuggestions(null);
     }
   }, []);
 
@@ -373,7 +420,89 @@ export default function App() {
     [intelligenceActionId],
   );
 
-  async function submitCommand(raw = input) {
+  const captureHomeEvents = useCallback(async () => {
+    if (automationActionId) return;
+    setAutomationActionId("capture");
+    try {
+      const result = await captureAutomationEvents();
+      setAutomationSuggestions(result);
+      setLogs((current) => [{
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: "info",
+        text: `事件快照已采集：新增 ${result.capturedEvents?.length ?? 0} 个变化，自动化建议 ${result.suggestionCount ?? 0} 条。`,
+      }, ...current]);
+    } catch (error) {
+      setLogs((current) => [{
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: "cancel",
+        text: `事件快照采集失败：${error.message}`,
+      }, ...current]);
+    } finally {
+      setAutomationActionId(null);
+    }
+  }, [automationActionId]);
+
+  const reviewAutomationSuggestion = useCallback(async (suggestion, status) => {
+    if (!suggestion?.id || automationActionId) return;
+    setAutomationActionId(`${status}:${suggestion.id}`);
+    try {
+      setAutomationSuggestions(await updateAutomationSuggestion({ suggestionId: suggestion.id, status }));
+    } catch (error) {
+      setLogs((current) => [{
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: "cancel",
+        text: `自动化建议更新失败：${error.message}`,
+      }, ...current]);
+    } finally {
+      setAutomationActionId(null);
+    }
+  }, [automationActionId]);
+
+  const simulateAutomation = useCallback(async (suggestion) => {
+    if (!suggestion?.id || automationActionId) return;
+    setAutomationActionId(`simulate:${suggestion.id}`);
+    try {
+      const result = await previewAutomationSuggestion(suggestion.id);
+      setLastPlan({
+        id: suggestion.id,
+        kind: "automation_preview",
+        path: "automation-preview",
+        intent: suggestion.type,
+        confidence: suggestion.confidence,
+        summary: `${suggestion.summary}（仅模拟，不控制真实设备）`,
+        steps: suggestion.actions.map((action) => ({
+          id: `${suggestion.id}:${action.thingId}:${action.capabilityId}`,
+          deviceId: action.thingId,
+          deviceName: action.thingName,
+          capability: action.capabilityName,
+          value: action.value,
+          risk: "low",
+          reason: "automation preview",
+        })),
+        commandResult: { status: "dry_run", path: "automation-preview", latencyMs: 0 },
+      });
+      setLogs((current) => [{
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: result.preview?.ok ? "success" : "cancel",
+        text: `自动化模拟：${suggestion.title} -> ${result.preview?.ok ? "通过" : "拒绝"}，未控制真实设备。`,
+      }, ...current]);
+    } catch (error) {
+      setLogs((current) => [{
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+        level: "cancel",
+        text: `自动化模拟失败：${error.message}`,
+      }, ...current]);
+    } finally {
+      setAutomationActionId(null);
+    }
+  }, [automationActionId]);
+
+  async function submitCommand(raw = input, { source = "text" } = {}) {
     const command = raw.trim();
     if (!command || processing) return;
 
@@ -388,6 +517,7 @@ export default function App() {
           input: command,
           currentRoomId,
           selectedRoomId,
+          source,
         });
         if (
           realResult.plan?.actions?.length > 0 ||
@@ -613,6 +743,43 @@ export default function App() {
     setSelectedRoomId(roomId);
   }, []);
 
+  function toggleListening() {
+    if (!speechInput.supported || processing) return;
+    if (speechState.listening) {
+      speechInput.stop();
+      setSpeechState((current) => ({ ...current, listening: false }));
+      return;
+    }
+    speechOutput.stop();
+    setSpeechState((current) => ({ ...current, speaking: false, listening: true, error: null, confidence: 0 }));
+    speechInput.start({
+      onResult: (result) => {
+        const assessment = assessSpeechTranscript(result);
+        setInput(assessment.transcript);
+        setSpeechState((current) => ({
+          ...current,
+          confidence: assessment.confidence,
+          error: assessment.code === "low_confidence" ? "转写置信度较低，请确认文字后再发送" : null,
+        }));
+        if (assessment.ok) {
+          speechInput.stop();
+          setSpeechState((current) => ({ ...current, listening: false }));
+          window.setTimeout(() => submitCommand(assessment.transcript, { source: "voice" }), 180);
+        }
+      },
+      onError: (error) => setSpeechState((current) => ({ ...current, listening: false, error: error.message })),
+      onEnd: () => setSpeechState((current) => ({ ...current, listening: false })),
+    });
+  }
+
+  function toggleTts() {
+    setSpeechState((current) => {
+      const enabled = !current.ttsEnabled;
+      if (!enabled) speechOutput.stop();
+      return { ...current, ttsEnabled: enabled, speaking: enabled ? current.speaking : false };
+    });
+  }
+
   return (
     <main className="app">
       <section className="scene-panel" aria-label="三维房屋模拟器">
@@ -656,6 +823,11 @@ export default function App() {
           messages={messages}
           processing={processing}
           onSubmit={submitCommand}
+          speechState={speechState}
+          speechSupported={speechInput.supported}
+          ttsSupported={speechOutput.supported}
+          onToggleListening={toggleListening}
+          onToggleTts={toggleTts}
         />
         <PendingPlan plan={pendingPlan} onConfirm={confirmPending} onCancel={cancelPending} />
         <PlanPreview plan={lastPlan} />
@@ -668,6 +840,13 @@ export default function App() {
           onReplay={replayAuditEntry}
           onIgnoreCandidate={ignoreLearningCandidate}
           onDeleteCandidate={deleteLearningCandidateFromMemory}
+        />
+        <AutomationSuggestionsPanel
+          data={automationSuggestions}
+          actionId={automationActionId}
+          onCapture={captureHomeEvents}
+          onSimulate={simulateAutomation}
+          onReview={reviewAutomationSuggestion}
         />
         <SensorSimulator devices={devices} onToggle={toggleDeviceSensor} />
         <AuditLog logs={logs} />
@@ -1102,13 +1281,45 @@ function deviceStateLabel(device) {
   return "待机";
 }
 
-function CommandConsole({ input, setInput, inputRef, messages, processing, onSubmit }) {
+function CommandConsole({
+  input,
+  setInput,
+  inputRef,
+  messages,
+  processing,
+  onSubmit,
+  speechState,
+  speechSupported,
+  ttsSupported,
+  onToggleListening,
+  onToggleTts,
+}) {
   return (
     <section className="panel console-panel">
       <div className="panel-title">
         <Bot size={17} />
         <h2>Command</h2>
         {processing && <span className="working">Parsing</span>}
+        <div className="speech-controls">
+          <button
+            className={`mini-icon-button ${speechState.listening ? "active" : ""}`}
+            type="button"
+            onClick={onToggleListening}
+            disabled={!speechSupported || processing || speechState.speaking}
+            title={speechSupported ? (speechState.listening ? "停止语音输入" : "开始语音输入") : "当前浏览器不支持语音输入"}
+          >
+            {speechState.listening ? <MicOff size={13} /> : <Mic size={13} />}
+          </button>
+          <button
+            className={`mini-icon-button ${speechState.ttsEnabled ? "active" : ""}`}
+            type="button"
+            onClick={onToggleTts}
+            disabled={!ttsSupported}
+            title={ttsSupported ? (speechState.ttsEnabled ? "关闭语音播报" : "开启语音播报") : "当前浏览器不支持语音播报"}
+          >
+            {speechState.ttsEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+          </button>
+        </div>
       </div>
       <div className="message-list" aria-live="polite">
         {messages.slice(-8).map((message) => (
@@ -1126,6 +1337,11 @@ function CommandConsole({ input, setInput, inputRef, messages, processing, onSub
           </div>
         ))}
       </div>
+      {(speechState.listening || speechState.error) && (
+        <div className={`speech-status ${speechState.error ? "error" : ""}`}>
+          {speechState.error || `正在识别 · ${Math.round(speechState.confidence * 100)}%`}
+        </div>
+      )}
       <form
         className="command-form"
         onSubmit={(event) => {
@@ -1373,6 +1589,77 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function AutomationSuggestionsPanel({ data, actionId, onCapture, onSimulate, onReview }) {
+  const suggestions = (data?.suggestions ?? []).filter((item) => item.status !== "ignored").slice(0, 4);
+  return (
+    <section className="panel automation-panel">
+      <div className="panel-title">
+        <Activity size={17} />
+        <h2>Automation</h2>
+        <span className="shadow-badge">Shadow</span>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={onCapture}
+          disabled={Boolean(actionId)}
+          title="采集只读家庭事件快照"
+        >
+          <RefreshCw size={13} />
+        </button>
+      </div>
+      <div className="automation-summary">
+        <span>events <strong>{data?.eventCount ?? 0}</strong></span>
+        <span>suggestions <strong>{data?.suggestionCount ?? 0}</strong></span>
+        <span>reviewed <strong>{data?.reviewedCount ?? 0}</strong></span>
+      </div>
+      {suggestions.length === 0 ? (
+        <p className="hcm-note">需要至少两次相似成功操作才会生成建议。</p>
+      ) : (
+        <div className="automation-list">
+          {suggestions.map((suggestion) => (
+            <div className="automation-item" key={suggestion.id}>
+              <div>
+                <strong>{suggestion.title}</strong>
+                <p>{suggestion.summary}</p>
+                <small>{Math.round(suggestion.confidence * 100)}% · {suggestion.status}</small>
+              </div>
+              <div className="automation-actions">
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  onClick={() => onSimulate(suggestion)}
+                  disabled={Boolean(actionId)}
+                  title="仅模拟，不控制真实设备"
+                >
+                  <Play size={13} />
+                </button>
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  onClick={() => onReview(suggestion, "reviewed")}
+                  disabled={Boolean(actionId) || suggestion.status === "reviewed"}
+                  title="标记为已审核，不启用自动化"
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  onClick={() => onReview(suggestion, "ignored")}
+                  disabled={Boolean(actionId)}
+                  title="忽略建议"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

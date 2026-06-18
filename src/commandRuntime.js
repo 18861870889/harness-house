@@ -1,9 +1,10 @@
-export function createCommandTrace({ input, path = "hcm-real", dryRun = false, replayOf, now = () => Date.now() } = {}) {
+export function createCommandTrace({ input, path = "hcm-real", source = "text", dryRun = false, replayOf, now = () => Date.now() } = {}) {
   const startedAt = now();
   return {
     commandId: crypto.randomUUID(),
     input,
     path,
+    source,
     dryRun,
     replayOf,
     startedAt,
@@ -41,6 +42,7 @@ export function finishCommandTrace(trace, { status, plan, execution, explanation
     commandId: trace.commandId,
     input: trace.input,
     path: trace.path,
+    source: trace.source,
     dryRun: trace.dryRun,
     replayOf: trace.replayOf,
     status,
@@ -160,7 +162,9 @@ function summarizeExecution(execution) {
       thingName: item.thingName,
       capabilityId: item.capabilityId,
       capabilityName: item.capabilityName,
+      value: item.value,
       service: item.service,
+      serviceData: item.serviceData,
       simulation: item.simulation,
     })),
     simulation: execution.simulation

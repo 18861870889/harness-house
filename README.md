@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.14`
+当前进度：`v0.16`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -108,6 +108,21 @@ Provider Raw Graph
 - 选中房间高亮和人在区域高亮已经拆分，后续语音定位和执行动画可以复用同一套 layer。
 - dry-run 目标显示为 preview，真实执行目标显示为 execution，诊断问题显示为 alert。
 
+### Independent Speech I/O
+
+- 浏览器 Web Speech API 是首个可替换 STT/TTS provider。
+- 按键录音，高置信度最终转写进入与键盘相同的命令链路。
+- 低置信度转写只填入输入框，不自动执行。
+- 默认半双工：TTS 播放时停止 STT，避免系统听到自己的播报。
+- 不接小爱，不做常开监听和唤醒词。
+
+### Home Event & Automation Suggestions
+
+- 只读采集 HCM 状态快照并记录状态变化事件。
+- 至少两次相似成功执行才会生成 shadow 自动化建议。
+- 建议可以模拟、标记已审核或忽略，但不能启用或写入 HA 自动化。
+- 自动化模拟复用 HCM Executor、Policy Gate 和 HA Service Simulator，不控制真实设备。
+
 ## Quick Start
 
 ```bash
@@ -169,6 +184,7 @@ data/home-model-overlay.local.json
 data/command-audit.local.jsonl
 data/learning-memory.local.json
 data/provider-snapshot.local.json
+data/automation-memory.local.json
 ```
 
 这些文件是本地家庭状态和用户偏好数据，不应提交到 GitHub。
@@ -202,6 +218,11 @@ GET  /api/agents/snapshot
 
 GET  /api/onboarding/plan
 POST /api/onboarding/snapshot
+
+GET   /api/automation/suggestions
+POST  /api/automation/events/capture
+PATCH /api/automation/suggestions/:suggestionId
+POST  /api/automation/suggestions/:suggestionId/simulate
 ```
 
 `/api/hcm/command` 是当前真实 HCM 主链路入口：
@@ -241,12 +262,12 @@ Context Snapshot
 - `v0.12` Intent Accuracy Engine
 - `v0.13` Home Digital Twin State Layers
 - `v0.14` Policy & Permission System
+- `v0.15` Independent STT & TTS Alpha
+- `v0.16` Home Event & Automation Suggestions
 
 后续重点：
 
 - `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
-- `v0.15` Independent STT & TTS Alpha：独立语音输入/输出，采用按键录音和半双工交互，不接小爱。
-- `v0.16` Home Event & Automation Suggestions：观察人在、门窗和设备状态变化，生成可解释、可模拟的自动化建议，但不自动执行。
 - `v0.17` Adapter SDK & Provider Portability：标准化“provider 原始设备 -> HCM”的接入方式；更换 HA 或增加 Matter/MQTT 时，上层 AI、策略和 3D 无需重写。
 - `v1.0` Local-first Open Smart Home AI Framework。
 

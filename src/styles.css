@@ -714,6 +714,107 @@ button {
   background: rgba(251, 191, 36, 0.08);
 }
 
+.speech-controls {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.mini-icon-button.active {
+  border-color: rgba(94, 234, 212, 0.72);
+  color: var(--green);
+  background: rgba(20, 184, 166, 0.14);
+}
+
+.speech-status {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--green);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.speech-status.error {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.shadow-badge {
+  margin-left: auto;
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.automation-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.automation-summary span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.automation-summary strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.automation-list {
+  display: grid;
+  gap: 7px;
+}
+
+.automation-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.automation-item strong,
+.automation-item p,
+.automation-item small {
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.automation-item strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.automation-item p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.automation-item small {
+  margin-top: 4px;
+  color: var(--cyan);
+  font-size: 9px;
+}
+
+.automation-actions {
+  display: flex;
+  gap: 5px;
+}
+
 .message-list {
   display: flex;
   flex-direction: column;

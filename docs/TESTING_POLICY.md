@@ -69,6 +69,8 @@ Manual Real-device Tests
 - `src/policyEngine.js`
 - `src/digitalTwinLayers.js`
 - `src/providerOnboarding.js`
+- `src/speechRuntime.js`
+- `src/automationSuggestionEngine.js`
 - `src/adapters/*.js`
 
 命令：
@@ -112,3 +114,6 @@ Regression test:
 - Safety Gate 和 Policy Gate 要分开测，前者管能力是否可执行，后者管当前上下文是否应执行。
 - Digital Twin 的 selection、occupancy、preview、execution、alert 是不同状态层，不能混用。
 - Provider onboarding 只能生成 proposal，不能自动写 overlay 开放真实设备。
+- STT 低置信度、空文本和 provider 失败不能自动执行。
+- TTS 输出不能回流成新命令。
+- 自动化建议必须至少来自两次匹配成功行为，并保持 shadow mode。

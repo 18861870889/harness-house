@@ -7,7 +7,7 @@
 
 ## 当前状态校准
 
-本文是 v1.0 愿景草案，包含 MQTT、事件驱动、本地 LLM、强化学习等长期方向。当前仓库实现进度为 `v0.14`，真实工程状态以：
+本文是 v1.0 愿景草案，包含 MQTT、事件驱动、本地 LLM、强化学习等长期方向。当前仓库实现进度为 `v0.16`，真实工程状态以：
 
 - [CURRENT_STATUS.md](CURRENT_STATUS.md)
 - [ROADMAP.md](ROADMAP.md)
@@ -24,6 +24,8 @@
 - Audit / Learning / Shadow Multi-Agent Runtime。
 - Provider-to-HCM Onboarding。
 - Digital Twin State Layers。
+- Independent STT/TTS Alpha。
+- Shadow Home Event & Automation Suggestions。
 
 尚未落地或仍为未来方向：
 

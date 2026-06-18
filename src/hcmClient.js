@@ -36,11 +36,11 @@ export async function applyDefaultRunPolicy({ providerId } = {}) {
   return payload;
 }
 
-export async function runHcmCommand({ input, currentRoomId, selectedRoomId, dryRun = false }) {
+export async function runHcmCommand({ input, currentRoomId, selectedRoomId, dryRun = false, source = "text" }) {
   const response = await fetch("/api/hcm/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input, currentRoomId, selectedRoomId, dryRun }),
+    body: JSON.stringify({ input, currentRoomId, selectedRoomId, dryRun, source }),
   });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : {};
@@ -151,5 +151,33 @@ export async function deleteLearningCandidate({ candidateId }) {
   if (!response.ok) {
     throw new Error(payload.error || `Learning candidate delete failed ${response.status}`);
   }
+  return payload;
+}
+
+export async function getAutomationSuggestions() {
+  return fetchJson("/api/automation/suggestions");
+}
+
+export async function captureAutomationEvents() {
+  return fetchJson("/api/automation/events/capture", { method: "POST" });
+}
+
+export async function updateAutomationSuggestion({ suggestionId, status }) {
+  return fetchJson(`/api/automation/suggestions/${encodeURIComponent(suggestionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function previewAutomationSuggestion(suggestionId) {
+  return fetchJson(`/api/automation/suggestions/${encodeURIComponent(suggestionId)}/simulate`, { method: "POST" });
+}
+
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(payload.error || `Request failed ${response.status}`);
   return payload;
 }

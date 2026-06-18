@@ -4,6 +4,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
 import { runAgentRuntime, runContextAgent } from "./src/agentRuntime.js";
+import {
+  captureHomeEventSnapshot,
+  createAutomationMemory,
+  deriveAutomationSuggestions,
+  simulateAutomationSuggestion,
+  summarizeAutomationSuggestions,
+  updateAutomationSuggestionDecision,
+} from "./src/automationSuggestionEngine.js";
 import { planProviderOnboarding } from "./src/providerOnboarding.js";
 import { createProviderSnapshot } from "./src/providerSync.js";
 import {
@@ -43,6 +51,7 @@ const hcmOverlayPath = resolve(process.cwd(), process.env.HARNESS_HCM_OVERLAY_PA
 const commandAuditPath = resolve(process.cwd(), process.env.HARNESS_COMMAND_AUDIT_PATH || "data/command-audit.local.jsonl");
 const learningMemoryPath = resolve(process.cwd(), process.env.HARNESS_LEARNING_MEMORY_PATH || "data/learning-memory.local.json");
 const providerSnapshotPath = resolve(process.cwd(), process.env.HARNESS_PROVIDER_SNAPSHOT_PATH || "data/provider-snapshot.local.json");
+const automationMemoryPath = resolve(process.cwd(), process.env.HARNESS_AUTOMATION_MEMORY_PATH || "data/automation-memory.local.json");
 const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
@@ -321,6 +330,88 @@ app.get("/api/learning/memory", (_request, response) => {
   response.json(summarizeLearningMemory(readLearningMemory()));
 });
 
+app.get("/api/automation/suggestions", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({ error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN." });
+    return;
+  }
+  try {
+    const home = await discoverCurrentHcmHome();
+    const memory = readAutomationMemory();
+    const suggestions = deriveAutomationSuggestions({ memory, auditEntries: readCommandAuditEntries(200), home });
+    response.json(summarizeAutomationSuggestions(memory, suggestions));
+  } catch (error) {
+    response.status(error.statusCode || 502).json({ error: error.message || "Automation suggestions failed" });
+  }
+});
+
+app.post("/api/automation/events/capture", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({ error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN." });
+    return;
+  }
+  try {
+    const home = await discoverCurrentHcmHome();
+    const captured = captureHomeEventSnapshot(readAutomationMemory(), home);
+    writeAutomationMemory(captured.memory);
+    const suggestions = deriveAutomationSuggestions({
+      memory: captured.memory,
+      auditEntries: readCommandAuditEntries(200),
+      home,
+    });
+    response.json({
+      ...summarizeAutomationSuggestions(captured.memory, suggestions),
+      capturedEvents: captured.events,
+      realDeviceControl: false,
+    });
+  } catch (error) {
+    response.status(error.statusCode || 502).json({ error: error.message || "Automation event capture failed" });
+  }
+});
+
+app.patch("/api/automation/suggestions/:suggestionId", async (request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({ error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN." });
+    return;
+  }
+  try {
+    const status = request.body?.status;
+    const home = await discoverCurrentHcmHome();
+    const current = readAutomationMemory();
+    const suggestions = deriveAutomationSuggestions({ memory: current, auditEntries: readCommandAuditEntries(200), home });
+    if (!suggestions.some((item) => item.id === request.params.suggestionId)) {
+      response.status(404).json({ error: "Automation suggestion not found" });
+      return;
+    }
+    const memory = updateAutomationSuggestionDecision(current, request.params.suggestionId, status);
+    writeAutomationMemory(memory);
+    const updatedSuggestions = deriveAutomationSuggestions({ memory, auditEntries: readCommandAuditEntries(200), home });
+    response.json(summarizeAutomationSuggestions(memory, updatedSuggestions));
+  } catch (error) {
+    response.status(error.statusCode || 400).json({ error: error.message || "Automation suggestion update failed" });
+  }
+});
+
+app.post("/api/automation/suggestions/:suggestionId/simulate", async (_request, response) => {
+  if (!homeAssistantAdapter.isConfigured()) {
+    response.status(503).json({ error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN." });
+    return;
+  }
+  try {
+    const home = await discoverCurrentHcmHome();
+    const memory = readAutomationMemory();
+    const suggestions = deriveAutomationSuggestions({ memory, auditEntries: readCommandAuditEntries(200), home });
+    const suggestion = suggestions.find((item) => item.id === _request.params.suggestionId);
+    if (!suggestion) {
+      response.status(404).json({ error: "Automation suggestion not found" });
+      return;
+    }
+    response.json({ suggestionId: suggestion.id, preview: simulateAutomationSuggestion(suggestion, home) });
+  } catch (error) {
+    response.status(error.statusCode || 502).json({ error: error.message || "Automation suggestion simulation failed" });
+  }
+});
+
 app.patch("/api/learning/candidates/:candidateId", (request, response) => {
   try {
     const memory = updateLearningCandidate(readLearningMemory(), request.params.candidateId, request.body ?? {});
@@ -482,6 +573,9 @@ function validateHcmCommandRequest(payload) {
   if (payload.dryRun !== undefined && typeof payload.dryRun !== "boolean") {
     throw badRequest("dryRun must be a boolean");
   }
+  if (payload.source !== undefined && !["text", "voice", "replay"].includes(payload.source)) {
+    throw badRequest("source must be text, voice, or replay");
+  }
   if (payload.replayOf !== undefined && typeof payload.replayOf !== "string") {
     throw badRequest("replayOf must be a string");
   }
@@ -558,6 +652,25 @@ function writeProviderSnapshotRecord(record) {
   writeFileSync(providerSnapshotPath, `${JSON.stringify(record, null, 2)}\n`);
 }
 
+function readAutomationMemory() {
+  if (!existsSync(automationMemoryPath)) return createAutomationMemory();
+  try {
+    return JSON.parse(readFileSync(automationMemoryPath, "utf8"));
+  } catch (error) {
+    throw new Error(`Automation memory file is invalid JSON: ${error.message}`);
+  }
+}
+
+function writeAutomationMemory(memory) {
+  mkdirSync(dirname(automationMemoryPath), { recursive: true });
+  writeFileSync(automationMemoryPath, `${JSON.stringify(memory, null, 2)}\n`);
+}
+
+async function discoverCurrentHcmHome() {
+  const rawHome = await homeAssistantAdapter.discoverHcmHome();
+  return applyPersonalSemanticsToThingAliases(applyHcmOverlay(rawHome, readHcmOverlay()));
+}
+
 function updateLearningMemory(auditEntry) {
   const memory = recordLearningObservation(readLearningMemory(), auditEntry);
   writeLearningMemory(memory);
@@ -578,6 +691,7 @@ async function runHcmCommandPipeline(payload) {
   const trace = createCommandTrace({
     input: payload.input,
     path: "hcm-real",
+    source: payload.source || (payload.replayOf ? "replay" : "text"),
     dryRun: Boolean(payload.dryRun),
     replayOf: payload.replayOf,
   });

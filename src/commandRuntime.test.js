@@ -81,6 +81,13 @@ describe("command runtime", () => {
     });
   });
 
+  it("preserves voice source in audit traces", () => {
+    const trace = createCommandTrace({ input: "打开客厅灯", source: "voice", now: () => 1000 });
+    const audit = finishCommandTrace(trace, { status: "no_action" }, () => 1010);
+
+    expect(audit.source).toBe("voice");
+  });
+
   it("preserves intent explanations in audit traces", () => {
     const trace = createCommandTrace({ input: "我要晾衣服", now: () => 1000 });
     const audit = finishCommandTrace(
