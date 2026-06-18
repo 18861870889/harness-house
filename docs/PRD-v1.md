@@ -5,6 +5,36 @@
 
 ---
 
+## 当前状态校准
+
+本文是 v1.0 愿景草案，包含 MQTT、事件驱动、本地 LLM、强化学习等长期方向。当前仓库实现进度为 `v0.14`，真实工程状态以：
+
+- [CURRENT_STATUS.md](CURRENT_STATUS.md)
+- [ROADMAP.md](ROADMAP.md)
+- [ENGINEERING_PLAYBOOK.md](ENGINEERING_PLAYBOOK.md)
+
+为准。
+
+当前已落地：
+
+- HCM-first provider 抽象。
+- Home Assistant Adapter 和 service simulator。
+- LLM Planner + Intent Accuracy Engine。
+- Safety Gate + Policy Gate。
+- Audit / Learning / Shadow Multi-Agent Runtime。
+- Provider-to-HCM Onboarding。
+- Digital Twin State Layers。
+
+尚未落地或仍为未来方向：
+
+- MQTT 骨干和事件总线。
+- 强化学习自动接管。
+- 本地 LLM 优先运行。
+- 生产级语音入口。
+- 多用户权限体系。
+
+---
+
 ## 1. 产品概述
 
 ### 1.1 产品名称

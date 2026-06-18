@@ -5,6 +5,26 @@
 
 ---
 
+## 当前状态校准
+
+本文是替代架构提案，保留为未来设计参考，不代表当前默认实现。当前仓库已经按 HCM-first、Home Assistant Adapter、LLM Planner、Intent Accuracy、Safety/Policy Gate、HA Service Simulator 路线推进到 `v0.14`。
+
+后续可以从本文吸收的方向：
+
+- `v0.16` 事件驱动 runtime。
+- `v0.17` provider portability / adapter SDK。
+- `v1.x` MQTT 骨干、本地 LLM、强化学习或行为克隆。
+
+当前不能直接照搬的点：
+
+- 不能让 RL/Rule Engine 绕过 HCM 和 Policy Gate。
+- 不能让 MQTT 或 HA 原始实体直接暴露给 LLM。
+- 不能在 shadow proposal 未审核前自动写生产自动化。
+
+当前状态见 [CURRENT_STATUS.md](CURRENT_STATUS.md)。
+
+---
+
 ## 与原方案的核心分歧
 
 | 维度 | 原方案（Hermes版） | 替代方案（本版） |

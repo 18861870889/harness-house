@@ -12,8 +12,11 @@ Goal:
 Affected layers:
 Non-goals:
 Real-device impact:
+Intent / policy impact:
+Provider / adapter impact:
 Acceptance tests:
 Rollback plan:
+Docs to update:
 ```
 
 ## 2. 标准节奏
@@ -25,7 +28,9 @@ Design Brief
   -> Implementation
   -> Simulation Verification
   -> Read-only Provider Verification
+  -> Intent / Safety / Policy Verification
   -> UI/3D Verification
+  -> Docs Update
   -> Review
   -> Commit + Push
 ```
@@ -37,6 +42,7 @@ Design Brief
 - 一个 schema 或 mapper。
 - 一个 adapter 行为。
 - 一个 safety rule。
+- 一个 intent accuracy 或 policy rule。
 - 一个 UI panel。
 - 一个 replay / audit 行为。
 
@@ -45,6 +51,8 @@ Design Brief
 - LLM prompt 和 executor。
 - adapter 和 3D layout。
 - safety policy 和样式。
+- policy gate 和 provider adapter。
+- digital twin 可视化和真实执行权限。
 - real execution 和 learning activation。
 
 ## 4. Review Checklist
@@ -55,9 +63,11 @@ Design Brief
 - 是否让 LLM 决定真实 service？
 - 是否新增真实设备副作用？
 - 是否有 simulator 或 dry-run 覆盖？
+- 是否新增或改变 intent accuracy / safety / policy gate？
 - 是否有风险等级和确认策略？
 - 是否会把本地 HA 快照、token、家庭设备明细提交？
 - UI 是否能解释“为什么执行/为什么拒绝”？
+- README / ROADMAP / TEST_CASES / CURRENT_STATUS 是否需要同步？
 
 ## 5. 发布说明模板
 

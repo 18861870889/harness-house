@@ -149,3 +149,33 @@
 npm test
 npm run build
 ```
+
+## 13. 后续版本测试焦点
+
+### v0.10 Real Home Pilot
+
+- 真实设备测试必须人工授权。
+- 只选低风险设备进入 pilot。
+- 每次真实执行必须有 audit trace。
+- HA 状态和 UI/3D 状态一致性需要抽样核对。
+- 高风险、隐私、燃气、门锁、配置类能力保持 0 次自动执行。
+
+### v0.15 Voice Interaction Alpha
+
+- 语音识别结果必须进入同一条 `/api/hcm/command` 链路。
+- `source=voice` 下不能执行配置类能力。
+- 语音状态查询只读。
+- 语音模糊指令必须经过 Intent Accuracy Engine。
+- TTS 只能朗读结果，不能触发二次执行。
+
+### v0.16 Event Runtime & Automation Proposals
+
+- provider 事件只能生成 proposal，不能直接控制真实设备。
+- 自动化 proposal 必须有触发条件、目标动作、风险说明和 dry-run 结果。
+- 被用户拒绝或忽略的 proposal 不应反复打扰。
+
+### v0.17 Adapter SDK
+
+- 新 provider 必须通过 raw graph -> HCM contract tests。
+- provider diff 必须能进入 onboarding plan。
+- provider unavailable 时，上层 UI 和 planner 必须得到明确错误或 simulator fallback。

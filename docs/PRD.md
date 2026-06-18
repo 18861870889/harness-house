@@ -5,6 +5,23 @@
 
 ---
 
+## 当前状态校准
+
+本文是早期产品需求草案，保留原始目标和用户痛点。当前工程实现已经演进到 `v0.14`，实际进度和后续计划以以下文档为准：
+
+- [CURRENT_STATUS.md](CURRENT_STATUS.md)
+- [ROADMAP.md](ROADMAP.md)
+- [TEST_CASES.md](TEST_CASES.md)
+
+与本文相比，当前实现的关键调整：
+
+- Home Assistant 是当前主要 provider，但不是上层业务模型；上层统一依赖 HCM。
+- 所有真实指令先经过 LLM，但 LLM 输出后必须经过 Intent Accuracy Engine、Safety Gate、Policy Gate 和 HA Service Simulator。
+- Learning 和多 agent 当前保持 shadow mode，不自动写生产规则。
+- 语音交互仍是后续版本 `v0.15`，不能绕过现有安全链路。
+
+---
+
 ## 1. 产品概述
 
 ### 1.1 产品名称

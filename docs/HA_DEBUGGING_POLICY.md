@@ -18,6 +18,7 @@
 - 对同一个 domain，不同厂商、不同集成、不同设备型号的 service 支持可能不同。
 - LLM 只能做意图理解，不能决定 HA service 细节。
 - Service 选择必须由本地 deterministic executor 完成，并且可测试。
+- 真实执行前还必须通过 Policy Gate 和 HA Service Simulator。
 
 ## 自动化调试规则
 
@@ -37,9 +38,9 @@
 - 通过 UI 触发真实设备动作。
 - 修改真实设备状态、配置或自动化。
 
-## 模拟层方向
+## 当前模拟层
 
-后续应增加 `HomeAssistantServiceSimulator`：
+当前已实现 `HomeAssistantServiceSimulator`，并接入真实 HCM command pipeline，位置在 `policy_gate` 之后、`device_executor` 之前：
 
 - 输入：HCM action、HA entity state、supported_features、service call。
 - 输出：would_execute / rejected / unsupported，并给出原因。
@@ -53,11 +54,13 @@
   - `button`
 - 对 `media_player` 必须基于 `supported_features` 选择 `media_play`、`media_pause`、`media_stop`、`turn_on/off` 等服务。
 
+`Policy Gate` 负责在 simulator 前收窄本地权限，例如保护设备类型、数值范围、长耗时设备启动确认和 voice source 限制。Simulator 负责验证 provider service 是否支持；两者不能互相替代。
+
 ## 回归要求
 
 每次修复真实设备 service 映射问题，都需要补：
 
 - executor 单元测试。
 - dry-run 验证。
+- policy gate 边界测试，如适用。
 - 如涉及真实 HA，必须先说明是否会实际控制设备。
-

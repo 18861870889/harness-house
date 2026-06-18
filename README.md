@@ -6,6 +6,8 @@ Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home As
 
 当前进度：`v0.14`
 
+当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
+
 ## Core Idea
 
 Harness House 的核心范式是：
@@ -207,11 +209,14 @@ POST /api/onboarding/snapshot
 ```text
 Context Snapshot
   -> Policy Overlay
+  -> Context Agent Snapshot
   -> Personal Semantics
   -> Prompt Compile
   -> LLM Planner
   -> Plan Normalize
+  -> Intent Accuracy Engine
   -> Safety Gate
+  -> Policy Gate
   -> HA Service Simulator
   -> Device Executor
   -> Audit / Learning / Agents
@@ -240,6 +245,9 @@ Context Snapshot
 后续重点：
 
 - `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
+- `v0.15` Voice Interaction Alpha：语音输入/输出接入，但继续复用 HCM、安全和策略链路。
+- `v0.16` Event Runtime & Automation Proposals：事件驱动和自动化建议，先 shadow-mode。
+- `v0.17` Adapter SDK & Provider Portability：让 HA 只是 provider 之一，沉淀 adapter 测试框架。
 - `v1.0` Local-first Open Smart Home AI Framework。
 
 完整规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
@@ -249,7 +257,7 @@ Context Snapshot
 开发和测试默认遵循：
 
 - 自动化测试不控制真实 HA 设备。
-- 真实执行必须经过 HCM、Safety Gate 和 HA Service Simulator。
+- 真实执行必须经过 HCM、Intent Accuracy Engine、Safety Gate、Policy Gate 和 HA Service Simulator。
 - 高风险、敏感、配置、隐私能力默认保护。
 - 学习结果和 agent 建议默认 shadow mode。
 - 任何 provider 的原始实体都不能绕过 HCM 直接交给 LLM 执行。
@@ -263,6 +271,7 @@ Context Snapshot
 ## Engineering Docs
 
 - [docs/PRD-v1.md](docs/PRD-v1.md)
+- [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md)
 - [docs/ENGINEERING_PLAYBOOK.md](docs/ENGINEERING_PLAYBOOK.md)
 - [docs/DEVICE_ADAPTER_CONTRACT.md](docs/DEVICE_ADAPTER_CONTRACT.md)

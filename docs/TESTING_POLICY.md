@@ -6,13 +6,13 @@
 
 ```text
 Unit Tests
-  HCM schema / planner / safety / service mapping
+  HCM schema / planner / intent accuracy / safety / policy / service mapping
 
 Contract Tests
   Adapter raw graph -> HCM
 
 Simulation Tests
-  Command -> HCM plan -> simulated service result
+  Command -> HCM plan -> policy gate -> simulated service result
 
 Read-only Provider Tests
   HA states / registry / supported_features snapshot
@@ -65,6 +65,10 @@ Manual Real-device Tests
 - `src/planValidator.js`
 - `src/hcmExecutor.js`
 - `src/hcmOverlay.js`
+- `src/intentAccuracyEngine.js`
+- `src/policyEngine.js`
+- `src/digitalTwinLayers.js`
+- `src/providerOnboarding.js`
 - `src/adapters/*.js`
 
 命令：
@@ -101,3 +105,10 @@ Regression test:
 - 同一 `media_player` 可能支持 pause，不支持 stop。
 - executor 必须参考 provider 真实能力。
 - 自动化调试应先模拟 service，不应直接试真实设备。
+
+`v0.12-v0.14` 的测试经验：
+
+- LLM 输出不能直接进入执行，必须经过 Intent Accuracy Engine。
+- Safety Gate 和 Policy Gate 要分开测，前者管能力是否可执行，后者管当前上下文是否应执行。
+- Digital Twin 的 selection、occupancy、preview、execution、alert 是不同状态层，不能混用。
+- Provider onboarding 只能生成 proposal，不能自动写 overlay 开放真实设备。
