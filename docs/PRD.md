@@ -18,7 +18,7 @@
 - Home Assistant 是当前主要 provider，但不是上层业务模型；上层统一依赖 HCM。
 - 所有真实指令先经过 LLM，但 LLM 输出后必须经过 Intent Accuracy Engine、Safety Gate、Policy Gate 和 HA Service Simulator。
 - Learning 和多 agent 当前保持 shadow mode，不自动写生产规则。
-- 语音交互仍是后续版本 `v0.15`，不能绕过现有安全链路。
+- `v0.15` 只实现独立 TTS 输出，不做语音输入，不接小爱；完整语音交互后置。
 
 ---
 

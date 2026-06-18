@@ -11,8 +11,8 @@
 
 后续可以从本文吸收的方向：
 
-- `v0.16` 事件驱动 runtime。
-- `v0.17` provider portability / adapter SDK。
+- `v0.16` 家庭事件采集和自动化建议，先建议、模拟、审核，不直接执行。
+- `v0.17` provider portability / adapter SDK，让不同承载终端统一映射到 HCM。
 - `v1.x` MQTT 骨干、本地 LLM、强化学习或行为克隆。
 
 当前不能直接照搬的点：

@@ -68,26 +68,37 @@ Exit criteria:
 - 0 high-risk accidental executions.
 - All failures have audit traces.
 
-### v0.15 - Voice Interaction Alpha
+### v0.15 - TTS Output Alpha
 
-Goal: add voice input/output without weakening runtime safety.
+Goal: reliably speak Harness House responses through an independent TTS output module.
 
-Likely path:
+Scope:
 
-- Treat voice as another command source: `source=voice`.
-- Reuse HCM command pipeline, Intent Accuracy Engine, Safety Gate, Policy Gate, and audit.
-- Start with push-to-talk or local browser microphone experiments.
-- Evaluate whether Xiaoai speaker can be used as I/O; if not, use an independent STT/TTS module.
+- Speak state-query answers, execution results, rejections, and confirmation requests.
+- Keep text as the source of truth; TTS consumes the final audited response and cannot create another command.
+- Provide a local output abstraction so the TTS engine can be replaced later.
+- Support mute, volume, interruption, duplicate suppression, and long-text truncation.
 
 Non-goals:
 
-- Always-listening production voice assistant.
-- Voice-based high-risk execution.
-- Vendor-specific hacks that bypass HCM.
+- Xiaoai integration.
+- Speech-to-text or microphone input.
+- Always-listening voice assistant.
+- Voice-triggered device execution.
 
-### v0.16 - Event Runtime & Automation Proposals
+### v0.16 - Home Event & Automation Suggestions
 
-Goal: move beyond manual commands while keeping automation suggestions in shadow mode first.
+Product meaning: the house starts noticing repeatable situations and proposes automations, but it does not silently take control.
+
+Example:
+
+```text
+Observed: study presence becomes occupied after 20:00, and the study light is usually turned on within 30 seconds.
+Proposal: when the study becomes occupied after 20:00, turn on the study light.
+Result: show the proposal, simulate it, and wait for user review.
+```
+
+Goal: move beyond manual commands while keeping event-driven automation suggestions in shadow mode first.
 
 Scope:
 
@@ -96,7 +107,20 @@ Scope:
 - Preview-only automation simulations.
 - User review before any persistent automation.
 
+This version does not automatically write Home Assistant automations or execute a newly discovered rule.
+
 ### v0.17 - Adapter SDK & Provider Portability
+
+Product meaning: changing the device host should not require rebuilding Harness House.
+
+Example:
+
+```text
+Today: Home Assistant entity -> HA Adapter -> HCM light capability
+Later: Matter device -> Matter Adapter -> the same HCM light capability
+```
+
+The planner, safety rules, policy gate, audit, and 3D UI continue to use HCM and do not know which provider is underneath.
 
 Goal: make Home Assistant replaceable as one provider among many.
 
@@ -106,6 +130,7 @@ Scope:
 - Provider snapshot/diff fixtures.
 - Capability evidence requirements.
 - Example simulator/provider adapter templates.
+- A semi-automatic onboarding path for unmapped capabilities instead of hard-coding each new device type.
 
 ### v1.0 - Open Source Framework Release
 

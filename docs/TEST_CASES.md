@@ -160,15 +160,16 @@ npm run build
 - HA 状态和 UI/3D 状态一致性需要抽样核对。
 - 高风险、隐私、燃气、门锁、配置类能力保持 0 次自动执行。
 
-### v0.15 Voice Interaction Alpha
+### v0.15 TTS Output Alpha
 
-- 语音识别结果必须进入同一条 `/api/hcm/command` 链路。
-- `source=voice` 下不能执行配置类能力。
-- 语音状态查询只读。
-- 语音模糊指令必须经过 Intent Accuracy Engine。
-- TTS 只能朗读结果，不能触发二次执行。
+- TTS 只消费最终回复，不能朗读 LLM draft 或中间 plan。
+- 页面重渲染或 audit 刷新不能导致同一结果重复朗读。
+- 新消息打断旧消息后，旧消息不能继续恢复播放。
+- TTS provider 超时或失败不能影响文字 UI、audit 和设备执行结果。
+- TTS 输出不能作为新命令回流。
+- 小爱、STT 和麦克风输入不在本版本测试范围。
 
-### v0.16 Event Runtime & Automation Proposals
+### v0.16 Home Event & Automation Suggestions
 
 - provider 事件只能生成 proposal，不能直接控制真实设备。
 - 自动化 proposal 必须有触发条件、目标动作、风险说明和 dry-run 结果。

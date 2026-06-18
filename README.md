@@ -245,9 +245,9 @@ Context Snapshot
 后续重点：
 
 - `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
-- `v0.15` Voice Interaction Alpha：语音输入/输出接入，但继续复用 HCM、安全和策略链路。
-- `v0.16` Event Runtime & Automation Proposals：事件驱动和自动化建议，先 shadow-mode。
-- `v0.17` Adapter SDK & Provider Portability：让 HA 只是 provider 之一，沉淀 adapter 测试框架。
+- `v0.15` TTS Output Alpha：先把状态查询和执行结果可靠地朗读出来；不做语音输入，不接小爱。
+- `v0.16` Home Event & Automation Suggestions：观察人在、门窗和设备状态变化，生成可解释、可模拟的自动化建议，但不自动执行。
+- `v0.17` Adapter SDK & Provider Portability：标准化“provider 原始设备 -> HCM”的接入方式；更换 HA 或增加 Matter/MQTT 时，上层 AI、策略和 3D 无需重写。
 - `v1.0` Local-first Open Smart Home AI Framework。
 
 完整规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
