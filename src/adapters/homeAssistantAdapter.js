@@ -1,15 +1,36 @@
 import { createDeviceManifest, pickDeviceState, validateActionAgainstManifest } from "../deviceRuntime.js";
 import { mapHomeAssistantGraphToHcm } from "./homeAssistantCatalog.js";
 import { fetchHomeAssistantGraph } from "./homeAssistantRegistry.js";
+import { isHomeAssistantServiceSupported } from "../homeAssistantServiceSupport.js";
+import { simulateHcmServiceCall } from "../homeAssistantServiceSimulator.js";
+import {
+  assertAuthorizedProviderExecution,
+  createProviderCommand,
+  createProviderIdentity,
+  createProviderSnapshotEnvelope,
+  defineProviderAdapter,
+} from "./providerAdapterSdk.js";
 
 export const HOME_ASSISTANT_ADAPTER_ID = "home_assistant";
 const LOW_RISK_CONTROL_TYPES = new Set(["light", "fan", "curtain", "tv"]);
 
-export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch } = {}) {
+export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch, graphLoader = fetchHomeAssistantGraph } = {}) {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-
-  return {
+  const identity = createProviderIdentity({
     id: HOME_ASSISTANT_ADAPTER_ID,
+    name: "Home Assistant",
+    version: "v0.17",
+    transport: "rest+websocket",
+  });
+
+  const adapter = {
+    id: HOME_ASSISTANT_ADAPTER_ID,
+    identity: async () => identity,
+    getConnectionStatus: async () => ({
+      state: normalizedBaseUrl && token ? "configured" : "unconfigured",
+      configured: Boolean(normalizedBaseUrl && token),
+      endpoint: normalizedBaseUrl ? redactUrl(normalizedBaseUrl) : null,
+    }),
     isConfigured: () => Boolean(normalizedBaseUrl && token),
     getStatus: () => ({
       configured: Boolean(normalizedBaseUrl && token),
@@ -39,18 +60,23 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
         throw new Error("Home Assistant adapter is not configured");
       }
 
-      return fetchHomeAssistantGraph({
+      return graphLoader({
         baseUrl: normalizedBaseUrl,
         token,
         fetchImpl,
       });
+    },
+    async discoverSnapshot() {
+      if (!normalizedBaseUrl || !token) throw new Error("Home Assistant adapter is not configured");
+      const graph = await graphLoader({ baseUrl: normalizedBaseUrl, token, fetchImpl });
+      return homeAssistantGraphToProviderSnapshot(graph, identity);
     },
     async discoverHcmHome() {
       if (!normalizedBaseUrl || !token) {
         throw new Error("Home Assistant adapter is not configured");
       }
 
-      const graph = await fetchHomeAssistantGraph({
+      const graph = await graphLoader({
         baseUrl: normalizedBaseUrl,
         token,
         fetchImpl,
@@ -64,21 +90,105 @@ export function createHomeAssistantAdapter({ baseUrl, token, fetchImpl = fetch }
 
       return readHomeAssistantEntity({ baseUrl: normalizedBaseUrl, token, fetchImpl, entityId });
     },
-    async executeAction(action) {
-      if (!normalizedBaseUrl || !token) {
-        throw new Error("Home Assistant adapter is not configured");
-      }
-
-      return executeHomeAssistantAction({ baseUrl: normalizedBaseUrl, token, fetchImpl, action });
+    async readState(targetId) {
+      if (!normalizedBaseUrl || !token) throw new Error("Home Assistant adapter is not configured");
+      return readHomeAssistantEntity({ baseUrl: normalizedBaseUrl, token, fetchImpl, entityId: targetId });
     },
-    async executeServiceCall(serviceCall) {
-      if (!normalizedBaseUrl || !token) {
-        throw new Error("Home Assistant adapter is not configured");
+    async compileAction(action) {
+      if (!normalizedBaseUrl || !token) throw new Error("Home Assistant adapter is not configured");
+      const entity = action.entity ?? (action.serviceCall ? null : await readHomeAssistantEntity({
+        baseUrl: normalizedBaseUrl,
+        token,
+        fetchImpl,
+        entityId: action.entityId,
+      }));
+      const serviceCall = action.serviceCall ?? buildServiceCall(entity, action);
+      return createProviderCommand({
+        providerId: HOME_ASSISTANT_ADAPTER_ID,
+        target: { id: serviceCall.serviceData?.entity_id ?? action.entityId, type: "entity" },
+        operation: `${serviceCall.domain}.${serviceCall.service}`,
+        payload: serviceCall.serviceData,
+        evidence: action.evidence ?? null,
+        idempotencyKey: action.idempotencyKey,
+      });
+    },
+    async simulate(command, context = {}) {
+      const serviceCall = providerCommandToHomeAssistantService(command);
+      if (context.home && context.item) {
+        const hcmCheck = simulateHcmServiceCall({ ...context.item, serviceCall }, context.home);
+        return { ...hcmCheck, mode: "simulation", providerId: HOME_ASSISTANT_ADAPTER_ID, commandFingerprint: command.fingerprint };
       }
-
-      return executeHomeAssistantServiceCall({ baseUrl: normalizedBaseUrl, token, fetchImpl, serviceCall });
+      const support = isHomeAssistantServiceSupported(serviceCall, command.evidence ? { binding: command.evidence.observations } : undefined);
+      return support.ok
+        ? { ok: true, mode: "simulation", providerId: HOME_ASSISTANT_ADAPTER_ID, serviceCall, assumed: support.assumed ?? false, commandFingerprint: command.fingerprint }
+        : { ok: false, mode: "simulation", providerId: HOME_ASSISTANT_ADAPTER_ID, serviceCall, commandFingerprint: command.fingerprint, ...support };
+    },
+    async execute(command, context) {
+      if (!normalizedBaseUrl || !token) throw new Error("Home Assistant adapter is not configured");
+      assertAuthorizedProviderExecution(context, command);
+      return executeHomeAssistantServiceCall({
+        baseUrl: normalizedBaseUrl,
+        token,
+        fetchImpl,
+        serviceCall: providerCommandToHomeAssistantService(command),
+      });
     },
   };
+  return defineProviderAdapter(adapter);
+}
+
+export function homeAssistantGraphToProviderSnapshot(graph, providerIdentity) {
+  const provider = providerIdentity ?? createProviderIdentity({
+    id: HOME_ASSISTANT_ADAPTER_ID,
+    name: "Home Assistant",
+    version: "unknown",
+    transport: "rest+websocket",
+  });
+  return createProviderSnapshotEnvelope({
+    provider,
+    capturedAt: graph.fetchedAt,
+    spaces: (graph.areas ?? []).map((area) => ({
+      externalId: area.area_id,
+      name: area.name ?? area.area_id,
+      metadata: { aliases: area.aliases },
+    })),
+    devices: (graph.devices ?? []).map((device) => ({
+      externalId: device.id,
+      name: device.name_by_user || device.name || device.id,
+      spaceId: device.area_id,
+      type: device.model,
+      metadata: {
+        manufacturer: device.manufacturer,
+        model: device.model,
+        swVersion: device.sw_version,
+        identifiers: device.identifiers,
+      },
+    })),
+    entities: (graph.entities ?? []).map((entity) => ({
+      externalId: entity.entity_id,
+      name: entity.name || entity.original_name || entity.entity_id,
+      deviceId: entity.device_id,
+      type: entity.entity_id?.split(".")[0],
+      disabled: Boolean(entity.disabled_by),
+      metadata: {
+        platform: entity.platform,
+        translationKey: entity.translation_key,
+      },
+    })),
+    states: (graph.states ?? []).map((state) => ({
+      targetId: state.entity_id,
+      value: state.state,
+      attributes: pickSafeAttributes(state.attributes ?? {}),
+    })),
+    metadata: { source: "home_assistant_registry" },
+  });
+}
+
+function providerCommandToHomeAssistantService(command) {
+  if (command?.providerId !== HOME_ASSISTANT_ADAPTER_ID) throw new Error("provider command is not for Home Assistant");
+  const [domain, service] = String(command.operation ?? "").split(".");
+  if (!domain || !service) throw new Error("Home Assistant provider command operation must be domain.service");
+  return { domain, service, serviceData: command.payload ?? {} };
 }
 
 export async function executeHomeAssistantServiceCall({ baseUrl, token, fetchImpl = fetch, serviceCall }) {

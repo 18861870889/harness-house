@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.16.1`.
+Current engineering progress: `v0.17`.
 
 Completed major runtime capabilities:
 
@@ -18,11 +18,15 @@ Completed major runtime capabilities:
 - Provider-to-HCM onboarding planner for new/changed/deleted provider devices.
 - Intent Accuracy Engine after LLM output.
 - Digital Twin State Layers for `selection / occupancy / preview / execution / alert`.
-- Policy Gate between Safety Gate and HA Service Simulator.
+- Policy Gate between Safety Gate and Provider Adapter simulation.
 - Independent browser STT/TTS with push-to-talk, transcript confidence gating, and half-duplex output.
 - Shadow home-event capture and automation suggestions with local simulation and review decisions.
 - Morning Mint light UI refresh across the operational panels and Three.js digital twin.
 - Stable desktop/mobile layout with distinct visual semantics for selection, occupancy, preview, execution, and alerts.
+- Provider Adapter Contract and provider-neutral snapshot schema at version `1.0`.
+- Capability Evidence attached to HCM capabilities.
+- Simulator and Home Assistant adapters passing the same read-only Contract Harness.
+- Adapter Registry and gated provider execution with simulation, authorization, and command audit identity.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -37,6 +41,20 @@ Status: completed.
 - Stabilized Command panel sizing so the input does not overlap the following panel.
 - Verified desktop and 390px mobile layouts without horizontal overflow.
 
+## v0.17 Adapter SDK & Provider Portability
+
+Status: completed for the SDK and current-provider migration scope.
+
+- Added the required Adapter methods: identity, connection status, snapshot discovery, HCM mapping, action compilation, simulation, execution, and state reading.
+- Added provider-neutral snapshots and diffs for stable device/entity/state change detection.
+- Added Capability Evidence with observed provider facts, command candidates, constraints, and confidence.
+- Migrated Simulator and Home Assistant to Contract `1.0` while retaining the discovery methods used by the current UI/runtime.
+- Added a reusable adapter template, registry, fixture-driven Contract Harness, and failure injection tests.
+- Provider execution now requires runtime authorization, successful adapter simulation bound to the same command fingerprint, and a command ID.
+- Disabled the public direct Home Assistant action route; commands must enter through `/api/hcm/command`.
+
+Limit: Matter/MQTT adapters are not claimed as hardware-certified until corresponding devices or certified fixtures are available. The SDK contract and mock portability path are complete.
+
 ## Current Runtime Chain
 
 ```text
@@ -50,8 +68,8 @@ User Command
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
-  -> HA Service Simulator
-  -> Device Executor
+  -> Provider Adapter Compile / Simulate
+  -> Authorized Provider Execute
   -> Audit / Learning / Agents
 ```
 
@@ -61,7 +79,7 @@ Key boundaries:
 - HCM is the upper-layer model; provider entities must not leak directly into planner/runtime code.
 - Safety Gate answers whether a capability is executable.
 - Policy Gate answers whether this context should execute it.
-- HA Service Simulator validates provider service support before any real device call.
+- The active Provider Adapter validates its command against current HCM evidence before any real device call; HA currently reuses the strict HA Service Simulator internally.
 
 ## Near-Term Plan
 
@@ -132,29 +150,6 @@ Scope:
 
 This version does not automatically write Home Assistant automations or execute a newly discovered rule.
 
-### v0.17 - Adapter SDK & Provider Portability
-
-Product meaning: changing the device host should not require rebuilding Harness House.
-
-Example:
-
-```text
-Today: Home Assistant entity -> HA Adapter -> HCM light capability
-Later: Matter device -> Matter Adapter -> the same HCM light capability
-```
-
-The planner, safety rules, policy gate, audit, and 3D UI continue to use HCM and do not know which provider is underneath.
-
-Goal: make Home Assistant replaceable as one provider among many.
-
-Scope:
-
-- Adapter contract test harness.
-- Provider snapshot/diff fixtures.
-- Capability evidence requirements.
-- Example simulator/provider adapter templates.
-- A semi-automatic onboarding path for unmapped capabilities instead of hard-coding each new device type.
-
 ### v1.0 - Open Source Framework Release
 
 Goal: stable local-first AI smart-home framework release.
@@ -188,6 +183,6 @@ Browser smoke checks should verify:
 ## Safety Rules
 
 - Automated tests must not call real HA `/api/services/*`.
-- Real-device execution requires user authorization and must go through HCM, Intent Accuracy Engine, Safety Gate, Policy Gate, and HA Service Simulator.
+- Real-device execution requires user authorization and must go through HCM, Intent Accuracy Engine, Safety Gate, Policy Gate, and the active Provider Adapter simulation.
 - High-risk, privacy, gas/water heater, lock, config, and unclear capabilities default to protected.
 - Learning and multi-agent suggestions remain shadow-mode unless explicitly reviewed.

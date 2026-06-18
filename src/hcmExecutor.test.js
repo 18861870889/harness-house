@@ -121,4 +121,34 @@ describe("hcm executor", () => {
       },
     });
   });
+
+  it("accepts provider-neutral bindings for compilation by the active adapter", () => {
+    const home = createHcmHome({
+      provider: { id: "matter", name: "Matter" },
+      things: [{
+        id: "matter_light",
+        name: "Matter 灯",
+        type: "light",
+        spaceId: "living",
+        provider: { id: "matter", deviceId: "device-1" },
+        capabilities: [{
+          id: "turn_on",
+          name: "打开",
+          kind: "control",
+          valueType: "boolean",
+          policy: { risk: "low", confirmation: "never", autoExecutable: true },
+          binding: { provider: "matter", targetId: "device-1", operation: "on_off.on" },
+        }],
+      }],
+    });
+
+    expect(validateHcmAction(
+      { thingId: "matter_light", capabilityId: "turn_on", value: true },
+      home,
+    )).toMatchObject({
+      ok: true,
+      action: { providerId: "matter", targetId: "device-1", value: true },
+      serviceCall: null,
+    });
+  });
 });

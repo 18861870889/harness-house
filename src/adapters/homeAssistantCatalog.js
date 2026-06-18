@@ -1,4 +1,5 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS, createHcmHome, stableId } from "../hcm.js";
+import { createCapabilityEvidence } from "./providerAdapterSdk.js";
 
 const CONTROL_DOMAINS = new Set(["light", "switch", "fan", "cover", "climate", "media_player", "vacuum"]);
 const SENSOR_DOMAINS = new Set(["sensor", "binary_sensor", "event"]);
@@ -151,6 +152,27 @@ function mapEntityToCapabilities({ entity, state, thingType, device }) {
     state: normalizeStateValue(state),
     unit: state?.attributes?.unit_of_measurement,
     binding: createBinding(entity, domain, state),
+    evidence: createCapabilityEvidence({
+      providerId: "home_assistant",
+      targetId: entity.entity_id,
+      source: "registry_and_state",
+      capability: cleanCapabilityName(name),
+      observations: {
+        domain,
+        platform: entity.platform,
+        deviceClass: state?.attributes?.device_class,
+        currentState: state?.state,
+        supportedFeatures: state?.attributes?.supported_features,
+      },
+      commands: serviceCandidatesForDomain(domain),
+      constraints: {
+        min: state?.attributes?.min,
+        max: state?.attributes?.max,
+        step: state?.attributes?.step,
+        unit: state?.attributes?.unit_of_measurement,
+      },
+      confidence: state ? 0.95 : 0.72,
+    }),
   };
 
   if (CONTROL_DOMAINS.has(domain)) {
@@ -200,6 +222,20 @@ function mapEntityToCapabilities({ entity, state, thingType, device }) {
       },
     },
   ];
+}
+
+function serviceCandidatesForDomain(domain) {
+  const services = {
+    light: ["light.turn_on", "light.turn_off"],
+    switch: ["switch.turn_on", "switch.turn_off"],
+    fan: ["fan.turn_on", "fan.turn_off", "fan.set_percentage"],
+    cover: ["cover.open_cover", "cover.close_cover", "cover.set_cover_position"],
+    climate: ["climate.turn_on", "climate.turn_off", "climate.set_temperature"],
+    media_player: ["media_player.media_play", "media_player.media_pause", "media_player.media_stop", "media_player.turn_off"],
+    vacuum: ["vacuum.start", "vacuum.return_to_base"],
+    button: ["button.press"],
+  };
+  return services[domain] ?? [];
 }
 
 function capabilityId(entity) {

@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
+import { createProviderAdapterRegistry } from "./src/adapters/providerAdapterRegistry.js";
 import { runAgentRuntime, runContextAgent } from "./src/agentRuntime.js";
 import {
   captureHomeEventSnapshot,
@@ -22,7 +23,7 @@ import {
   setThingOverride,
 } from "./src/hcmOverlay.js";
 import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
-import { simulateHcmServiceCalls } from "./src/homeAssistantServiceSimulator.js";
+import { executeSimulatedProviderPlan, simulateProviderExecutionPlan } from "./src/providerExecutionRuntime.js";
 import { evaluateExecutionPolicy } from "./src/policyEngine.js";
 import {
   buildHcmPlannerSystemPrompt,
@@ -56,6 +57,8 @@ const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
 });
+const providerRegistry = createProviderAdapterRegistry([homeAssistantAdapter]);
+const activeProviderAdapter = providerRegistry.get(HOME_ASSISTANT_ADAPTER_ID);
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -96,6 +99,14 @@ app.post("/api/llm/plan", async (request, response) => {
 
 app.get("/api/adapters/home-assistant/status", (_request, response) => {
   response.json(homeAssistantAdapter.getStatus());
+});
+
+app.get("/api/adapters", async (_request, response) => {
+  try {
+    response.json({ adapters: await providerRegistry.list() });
+  } catch (error) {
+    response.status(500).json({ error: error.message || "Adapter registry failed" });
+  }
 });
 
 app.get("/api/adapters/home-assistant/entities", async (_request, response) => {
@@ -437,23 +448,9 @@ app.delete("/api/learning/candidates/:candidateId", (request, response) => {
 });
 
 app.post("/api/adapters/home-assistant/actions", async (request, response) => {
-  if (!homeAssistantAdapter.isConfigured()) {
-    response.status(503).json({
-      error: "Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.",
-    });
-    return;
-  }
-
-  try {
-    const payload = request.body ?? {};
-    validateHomeAssistantActionRequest(payload);
-    const result = await homeAssistantAdapter.executeAction(payload);
-    response.json(result);
-  } catch (error) {
-    response.status(error.statusCode || 400).json({
-      error: error.message || "Home Assistant action failed",
-    });
-  }
+  response.status(410).json({
+    error: "Direct provider actions are disabled. Use /api/hcm/command so execution passes HCM, safety, policy, simulation, and audit gates.",
+  });
 });
 
 const vite = await createViteServer({
@@ -513,16 +510,6 @@ function validatePlanRequest(payload) {
   }
   if (!Array.isArray(payload.devices) || payload.devices.length === 0) {
     throw badRequest("devices are required");
-  }
-}
-
-function validateHomeAssistantActionRequest(payload) {
-  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
-  if (typeof payload.entityId !== "string" || !payload.entityId.trim()) {
-    throw badRequest("entityId is required");
-  }
-  if (typeof payload.capability !== "string" || !payload.capability.trim()) {
-    throw badRequest("capability is required");
   }
 }
 
@@ -667,7 +654,7 @@ function writeAutomationMemory(memory) {
 }
 
 async function discoverCurrentHcmHome() {
-  const rawHome = await homeAssistantAdapter.discoverHcmHome();
+  const rawHome = await activeProviderAdapter.discoverHcmHome();
   return applyPersonalSemanticsToThingAliases(applyHcmOverlay(rawHome, readHcmOverlay()));
 }
 
@@ -697,7 +684,7 @@ async function runHcmCommandPipeline(payload) {
   });
 
   try {
-    const rawHome = await runCommandStage(trace, "context_snapshot", () => homeAssistantAdapter.discoverHcmHome(), {
+    const rawHome = await runCommandStage(trace, "context_snapshot", () => activeProviderAdapter.discoverHcmHome(), {
       summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
     });
     const home = await runCommandStage(trace, "policy_overlay", async () => applyPersonalSemanticsToThingAliases(applyHcmOverlay(rawHome, readHcmOverlay())), {
@@ -818,7 +805,7 @@ async function runHcmCommandPipeline(payload) {
     const serviceSimulation = await runCommandStage(
       trace,
       "ha_service_simulator",
-      async () => simulateHcmServiceCalls(policyPlan.accepted, home),
+      async () => simulateProviderExecutionPlan({ adapter: activeProviderAdapter, accepted: policyPlan.accepted, home }),
       {
         summarize: (simulation) => ({
           ok: simulation.checks.filter((check) => check.ok).length,
@@ -850,12 +837,17 @@ async function runHcmCommandPipeline(payload) {
       execution.status = "dry_run";
     } else {
       execution.status = "executing";
-      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(policyPlan.accepted), {
+      execution.results = await runCommandStage(
+        trace,
+        "device_executor",
+        () => executeSimulatedProviderPlan({ adapter: activeProviderAdapter, simulation: serviceSimulation, commandId: trace.commandId }),
+        {
         summarize: (results) => ({
           ok: results.filter((result) => result.ok).length,
           failed: results.filter((result) => !result.ok).length,
         }),
-      });
+        },
+      );
       execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
     }
 
@@ -911,7 +903,7 @@ async function runHcmCommandPipeline(payload) {
 }
 
 async function buildAgentSnapshot() {
-  const home = applyPersonalSemanticsToThingAliases(applyHcmOverlay(await homeAssistantAdapter.discoverHcmHome(), readHcmOverlay()));
+  const home = applyPersonalSemanticsToThingAliases(applyHcmOverlay(await activeProviderAdapter.discoverHcmHome(), readHcmOverlay()));
   return runAgentRuntime({
     home,
     auditEntries: readCommandAuditEntries(20),
@@ -1041,48 +1033,21 @@ function compactPlannerContext(context) {
   };
 }
 
-async function executeHcmServiceCalls(accepted) {
-  const results = [];
-  for (const item of accepted) {
-    try {
-      const result = await homeAssistantAdapter.executeServiceCall(item.serviceCall);
-      results.push({
-        ok: true,
-        thingId: item.thing.id,
-        thingName: item.thing.name,
-        capabilityId: item.capability.id,
-        capabilityName: item.capability.name,
-        service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
-        serviceData: item.serviceCall.serviceData,
-        result,
-      });
-    } catch (error) {
-      results.push({
-        ok: false,
-        thingId: item.thing.id,
-        thingName: item.thing.name,
-        capabilityId: item.capability.id,
-        capabilityName: item.capability.name,
-        service: `${item.serviceCall.domain}.${item.serviceCall.service}`,
-        serviceData: item.serviceCall.serviceData,
-        error: error.message,
-      });
-    }
-  }
-  return results;
-}
-
 function formatAcceptedExecution(item, simulation) {
-  const service = `${item.serviceCall.domain}.${item.serviceCall.service}`;
-  const check = simulation?.checks?.find((candidate) => candidate.service === service && candidate.thingId === item.thing.id);
+  const fallbackService = item.serviceCall
+    ? `${item.serviceCall.domain}.${item.serviceCall.service}`
+    : item.capability.name;
+  const check = simulation?.checks?.find(
+    (candidate) => candidate.thingId === item.thing.id && candidate.capabilityId === item.capability.id,
+  );
   return {
     thingId: item.thing.id,
     thingName: item.thing.name,
     capabilityId: item.capability.id,
     capabilityName: item.capability.name,
     value: item.action.value,
-    service,
-    serviceData: item.serviceCall.serviceData,
+    service: check?.service ?? fallbackService,
+    serviceData: check?.command?.payload ?? item.serviceCall?.serviceData,
     simulation: check
       ? {
           ok: check.ok,

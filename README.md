@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.16.1`
+当前进度：`v0.17`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -20,8 +20,8 @@ Provider Raw Graph
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
-  -> HA Service Simulator
-  -> Device Executor
+  -> Provider Adapter Compile / Simulate
+  -> Authorized Provider Execute
   -> Audit / Learning / Agents
 ```
 
@@ -96,6 +96,15 @@ Provider Raw Graph
 - 新增高风险、隐私、配置、语义不清设备默认保护。
 - Onboarding 只生成 overlay proposal，不自动开放真实设备。
 - 支持记录当前 HA graph 为 baseline，后续新增/变更设备进入 Onboarding Plan。
+
+### Adapter SDK & Provider Portability
+
+- Provider Adapter Contract `1.0` 统一身份、连接状态、发现、HCM 映射、动作编译、模拟、执行和状态读取。
+- Provider-neutral Snapshot `1.0` 统一 spaces/devices/entities/states，并支持稳定 ID diff。
+- Capability Evidence 记录能力来源、可用命令、约束、状态证据和映射置信度。
+- Simulator 与 Home Assistant 已迁移到同一契约，并通过同一 Contract Harness。
+- Adapter Registry 统一管理 Provider；`GET /api/adapters` 可查看已注册 Adapter 和连接状态。
+- 真实执行必须携带成功模拟结果、runtime 授权和 command ID；直连 HA action API 已关闭。
 
 ### Intent Accuracy & Policy Gates
 
@@ -201,6 +210,7 @@ POST /api/llm/plan
 
 GET  /api/adapters/home-assistant/status
 GET  /api/adapters/home-assistant/entities
+GET  /api/adapters
 
 GET  /api/hcm/home
 POST /api/hcm/command
@@ -240,8 +250,8 @@ Context Snapshot
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
-  -> HA Service Simulator
-  -> Device Executor
+  -> Provider Adapter Compile / Simulate
+  -> Authorized Provider Execute
   -> Audit / Learning / Agents
 ```
 
@@ -267,11 +277,11 @@ Context Snapshot
 - `v0.15` Independent STT & TTS Alpha
 - `v0.16` Home Event & Automation Suggestions
 - `v0.16.1` Morning Mint UI Refresh
+- `v0.17` Adapter SDK & Provider Portability
 
 后续重点：
 
-- `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
-- `v0.17` Adapter SDK & Provider Portability：标准化“provider 原始设备 -> HCM”的接入方式；更换 HA 或增加 Matter/MQTT 时，上层 AI、策略和 3D 无需重写。
+- `v0.10` Real Home Pilot：完成真实住宅七天稳定性和低风险设备验收。
 - `v1.0` Local-first Open Smart Home AI Framework。
 
 完整规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
@@ -281,7 +291,7 @@ Context Snapshot
 开发和测试默认遵循：
 
 - 自动化测试不控制真实 HA 设备。
-- 真实执行必须经过 HCM、Intent Accuracy Engine、Safety Gate、Policy Gate 和 HA Service Simulator。
+- 真实执行必须经过 HCM、Intent Accuracy Engine、Safety Gate、Policy Gate 和 Provider Adapter Simulator。
 - 高风险、敏感、配置、隐私能力默认保护。
 - 学习结果和 agent 建议默认 shadow mode。
 - 任何 provider 的原始实体都不能绕过 HCM 直接交给 LLM 执行。
@@ -299,6 +309,7 @@ Context Snapshot
 - [docs/ROADMAP.md](docs/ROADMAP.md)
 - [docs/ENGINEERING_PLAYBOOK.md](docs/ENGINEERING_PLAYBOOK.md)
 - [docs/DEVICE_ADAPTER_CONTRACT.md](docs/DEVICE_ADAPTER_CONTRACT.md)
+- [docs/ADAPTER_SDK.md](docs/ADAPTER_SDK.md)
 - [docs/VERSION_WORKFLOW.md](docs/VERSION_WORKFLOW.md)
 
 ## License

@@ -3,8 +3,11 @@ import {
   buildServiceCall,
   createHomeAssistantAdapter,
   executeHomeAssistantAction,
+  homeAssistantGraphToProviderSnapshot,
   mapHomeAssistantState,
 } from "./homeAssistantAdapter.js";
+import { runProviderAdapterContract, validateProviderAdapter } from "./providerAdapterSdk.js";
+import { mapHomeAssistantGraphToHcm } from "./homeAssistantCatalog.js";
 
 describe("home assistant adapter", () => {
   it("reports unconfigured status without exposing secrets", () => {
@@ -15,6 +18,60 @@ describe("home assistant adapter", () => {
       baseUrl: null,
     });
     expect(adapter.isConfigured()).toBe(false);
+    expect(validateProviderAdapter(adapter).ok).toBe(true);
+  });
+
+  it("normalizes the HA registry graph into a provider-neutral snapshot", () => {
+    const snapshot = homeAssistantGraphToProviderSnapshot(createHaGraph());
+
+    expect(snapshot).toMatchObject({
+      version: "1.0",
+      provider: { id: "home_assistant" },
+      spaces: [{ externalId: "living", name: "客厅" }],
+      devices: [expect.objectContaining({ externalId: "device-1", spaceId: "living" })],
+      entities: [expect.objectContaining({ externalId: "light.living_room", deviceId: "device-1" })],
+      states: [expect.objectContaining({ targetId: "light.living_room", value: "on" })],
+    });
+  });
+
+  it("attaches provider evidence to HCM capabilities", () => {
+    const home = mapHomeAssistantGraphToHcm(createHaGraph());
+    const capability = home.things[0].capabilities[0];
+
+    expect(capability.evidence).toMatchObject({
+      providerId: "home_assistant",
+      targetId: "light.living_room",
+      source: "registry_and_state",
+      confidence: 0.95,
+    });
+    expect(capability.evidence.commands).toContain("light.turn_on");
+  });
+
+  it("passes the common adapter contract with fixture discovery and never posts a service", async () => {
+    const calls = [];
+    const graph = createHaGraph();
+    const adapter = createHomeAssistantAdapter({
+      baseUrl: "http://ha.local:8123",
+      token: "secret",
+      graphLoader: async () => structuredClone(graph),
+      fetchImpl: async (url, options = {}) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          async json() {
+            return graph.states[0];
+          },
+        };
+      },
+    });
+
+    const result = await runProviderAdapterContract(adapter, {
+      sampleTargetId: "light.living_room",
+      sampleAction: { entityId: "light.living_room", capability: "turn_off", value: false },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls.every((call) => call.options.method !== "POST")).toBe(true);
   });
 
   it("discovers entities from /api/states and maps capabilities", async () => {
@@ -237,3 +294,30 @@ describe("home assistant adapter", () => {
     });
   });
 });
+
+function createHaGraph() {
+  return {
+    provider: { id: "home_assistant", name: "Home Assistant" },
+    fetchedAt: "2026-06-18T00:00:00.000Z",
+    areas: [{ area_id: "living", name: "客厅" }],
+    devices: [{
+      id: "device-1",
+      name: "客厅灯",
+      area_id: "living",
+      manufacturer: "Fixture",
+      model: "Light 1",
+      identifiers: [["xiaomi_home", "fixture-light"]],
+    }],
+    entities: [{
+      entity_id: "light.living_room",
+      device_id: "device-1",
+      platform: "xiaomi_home",
+      original_name: "主灯",
+    }],
+    states: [{
+      entity_id: "light.living_room",
+      state: "on",
+      attributes: { friendly_name: "客厅主灯", brightness: 128, supported_features: 0 },
+    }],
+  };
+}

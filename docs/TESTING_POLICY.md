@@ -77,6 +77,7 @@ Manual Real-device Tests
 
 ```bash
 npm test
+npm run test:adapter
 npm run build
 ```
 
@@ -117,3 +118,6 @@ Regression test:
 - STT 低置信度、空文本和 provider 失败不能自动执行。
 - TTS 输出不能回流成新命令。
 - 自动化建议必须至少来自两次匹配成功行为，并保持 shadow mode。
+- Adapter Contract Harness 只能调用 discovery、HCM mapping、read、compile 和 simulate，不能调用 execute。
+- Provider execute 必须同时需要 runtime authorization、匹配 command fingerprint 的成功 simulation 和 command ID。
+- Provider snapshot 和 capability evidence 不得包含 token、password、authorization 或 API key。

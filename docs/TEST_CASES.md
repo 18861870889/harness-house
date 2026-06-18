@@ -187,5 +187,10 @@ npm run build
 ### v0.17 Adapter SDK
 
 - 新 provider 必须通过 raw graph -> HCM contract tests。
-- provider diff 必须能进入 onboarding plan。
+- provider-neutral snapshot diff 必须保留稳定 identity，并识别新增、删除、重命名、换房间和状态变化。
 - provider unavailable 时，上层 UI 和 planner 必须得到明确错误或 simulator fallback。
+- Contract Harness 不能调用 execute，也不能产生 Provider 外部副作用。
+- Adapter execute 缺少 runtime authorization、成功 simulation 或 command ID 时必须拒绝。
+- snapshot/evidence 中的 token、password、authorization 和 API key 必须被移除。
+- Simulator 和 Home Assistant 必须通过同一 Contract `1.0`。
+- 直连 Home Assistant action API 必须返回 `410`，真实控制只能进入 `/api/hcm/command`。

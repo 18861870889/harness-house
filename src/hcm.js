@@ -82,6 +82,7 @@ export function normalizeCapability(capability) {
     unit: capability.unit,
     policy: normalizePolicy(capability.policy),
     binding: capability.binding ?? null,
+    evidence: capability.evidence ?? null,
   };
 }
 

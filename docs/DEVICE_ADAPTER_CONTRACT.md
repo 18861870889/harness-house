@@ -27,6 +27,22 @@ Adapter 必须提供：
 - provider raw id 到 HCM binding 的稳定映射。
 - snapshot hash 和 diff 所需的稳定 identity。
 
+代码契约为 `1.0`，要求实现：
+
+```js
+identity()
+getConnectionStatus()
+discoverSnapshot()
+discoverHcmHome()
+compileAction(action)
+simulate(command)
+execute(command, context)
+readState(targetId)
+subscribe?(handler)
+```
+
+详细 SDK、Snapshot 和执行约束见 [ADAPTER_SDK.md](ADAPTER_SDK.md)。
+
 ## 2. HCM Thing 最小字段
 
 ```json
@@ -63,11 +79,12 @@ Adapter 必须提供：
   "confirmation": "never",
   "autoExecutable": true,
   "evidence": {
-    "source": "home_assistant",
-    "domain": "climate",
-    "entityId": "climate.living_room_ac",
-    "service": "climate.set_temperature",
-    "supportedFeatures": 385
+    "providerId": "home_assistant",
+    "targetId": "climate.living_room_ac",
+    "source": "registry_and_state",
+    "commands": ["climate.set_temperature"],
+    "constraints": { "min": 16, "max": 30 },
+    "confidence": 0.95
   }
 }
 ```
@@ -88,7 +105,7 @@ Adapter 必须提供：
 
 ## 5. Service 选择规则
 
-Adapter 可以声明候选 service，但最终 service 选择由 executor 完成。
+Adapter 可以声明候选 command；Provider-specific command 由 `compileAction()` 生成，是否允许执行仍由 HCM、Safety Gate 和 Policy Gate 决定。
 
 要求：
 
@@ -96,6 +113,7 @@ Adapter 可以声明候选 service，但最终 service 选择由 executor 完成
 - 必须参考 state、attributes、supported_features、registry 和 provider 文档。
 - 不支持的 service 在 dry-run 中应返回 `unsupported`。
 - 真实执行前必须重新校验当前 provider state。
+- `execute()` 必须拒绝缺少 authorization、成功 simulation 或 command ID 的调用。
 
 ## 6. Provider 变动感知与 Onboarding
 

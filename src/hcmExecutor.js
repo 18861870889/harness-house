@@ -16,13 +16,21 @@ export function validateHcmAction(action, home) {
   }
 
   const domain = capability.binding?.domain;
-  if (!EXECUTABLE_DOMAINS.has(domain)) {
+  const providerId = capability.binding?.provider ?? thing.provider?.id ?? home?.provider?.id;
+  const providerTargetId = capability.binding?.targetId ?? capability.binding?.deviceId ?? capability.binding?.entityId;
+  const usesHomeAssistantBinding = providerId === "home_assistant" || Boolean(capability.binding?.entityId);
+  if (usesHomeAssistantBinding && !EXECUTABLE_DOMAINS.has(domain)) {
     return rejected(action, "unsupported_domain", `${domain ?? "unknown"} is not supported by HCM executor`);
+  }
+  if (!usesHomeAssistantBinding && (!providerId || !providerTargetId)) {
+    return rejected(action, "invalid_provider_binding", `${thing.name} does not expose a stable provider target`);
   }
 
   const normalizedValue = normalizeActionValue(action.value, capability);
-  const serviceCall = mapHcmActionToHomeAssistantService({ thing, capability, value: normalizedValue });
-  if (!serviceCall) {
+  const serviceCall = usesHomeAssistantBinding
+    ? mapHcmActionToHomeAssistantService({ thing, capability, value: normalizedValue })
+    : null;
+  if (usesHomeAssistantBinding && !serviceCall) {
     return rejected(action, "unsupported_value", `${thing.name} ${capability.name} cannot execute value ${normalizedValue}`);
   }
 
@@ -37,6 +45,8 @@ export function validateHcmAction(action, home) {
       capabilityName: capability.name,
       value: normalizedValue,
       entityId: capability.binding.entityId,
+      targetId: providerTargetId,
+      providerId,
       domain,
     },
     serviceCall,
