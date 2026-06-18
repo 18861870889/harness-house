@@ -68,23 +68,27 @@ Exit criteria:
 - 0 high-risk accidental executions.
 - All failures have audit traces.
 
-### v0.15 - TTS Output Alpha
+### v0.15 - Independent STT & TTS Alpha
 
-Goal: reliably speak Harness House responses through an independent TTS output module.
+Goal: provide independent push-to-talk speech input and reliable speech output without Xiaoai integration.
 
 Scope:
 
+- Add a `SpeechInput` abstraction: microphone audio -> STT transcript -> visible command text.
+- Submit STT transcripts through the existing `/api/hcm/command` pipeline; STT never calls devices directly.
+- Use push-to-talk and half-duplex interaction by default: pause listening while TTS is speaking.
+- Require review or retry when STT confidence is low, the transcript is empty, or audio is truncated.
 - Speak state-query answers, execution results, rejections, and confirmation requests.
 - Keep text as the source of truth; TTS consumes the final audited response and cannot create another command.
-- Provide a local output abstraction so the TTS engine can be replaced later.
+- Provide replaceable `SpeechInput` and `SpeechOutput` provider abstractions.
 - Support mute, volume, interruption, duplicate suppression, and long-text truncation.
 
 Non-goals:
 
 - Xiaoai integration.
-- Speech-to-text or microphone input.
 - Always-listening voice assistant.
-- Voice-triggered device execution.
+- Wake-word detection.
+- Voice commands that bypass transcript visibility or the HCM command pipeline.
 
 ### v0.16 - Home Event & Automation Suggestions
 

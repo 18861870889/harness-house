@@ -160,14 +160,19 @@ npm run build
 - HA 状态和 UI/3D 状态一致性需要抽样核对。
 - 高风险、隐私、燃气、门锁、配置类能力保持 0 次自动执行。
 
-### v0.15 TTS Output Alpha
+### v0.15 Independent STT & TTS Alpha
 
+- 按键录音得到的 transcript 必须在执行前对用户可见。
+- STT transcript 必须进入与键盘输入相同的 `/api/hcm/command` 链路和 audit。
+- 低置信度、空文本、音频截断和 provider 超时不能自动执行。
+- STT 不能直接生成 service call 或绕过 Intent Accuracy / Safety / Policy Gate。
 - TTS 只消费最终回复，不能朗读 LLM draft 或中间 plan。
 - 页面重渲染或 audit 刷新不能导致同一结果重复朗读。
 - 新消息打断旧消息后，旧消息不能继续恢复播放。
 - TTS provider 超时或失败不能影响文字 UI、audit 和设备执行结果。
+- TTS 播放期间 STT 必须暂停或忽略系统输出，防止回声形成新指令。
 - TTS 输出不能作为新命令回流。
-- 小爱、STT 和麦克风输入不在本版本测试范围。
+- 小爱、常开监听和唤醒词不在本版本测试范围。
 
 ### v0.16 Home Event & Automation Suggestions
 
