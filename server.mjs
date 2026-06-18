@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { HOME_ASSISTANT_ADAPTER_ID, createHomeAssistantAdapter } from "./src/adapters/homeAssistantAdapter.js";
-import { runAgentRuntime } from "./src/agentRuntime.js";
+import { runAgentRuntime, runContextAgent } from "./src/agentRuntime.js";
 import { planProviderOnboarding } from "./src/providerOnboarding.js";
 import { createProviderSnapshot } from "./src/providerSync.js";
 import {
@@ -15,12 +15,14 @@ import {
 } from "./src/hcmOverlay.js";
 import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
 import { simulateHcmServiceCalls } from "./src/homeAssistantServiceSimulator.js";
+import { evaluateExecutionPolicy } from "./src/policyEngine.js";
 import {
   buildHcmPlannerSystemPrompt,
   compileHcmForPlanner,
   normalizeHcmPlannerDraft,
 } from "./src/hcmPlanner.js";
 import { explainIntentResult } from "./src/intentExplainer.js";
+import { applyIntentAccuracyGate, evaluateIntentAccuracy } from "./src/intentAccuracyEngine.js";
 import {
   applyPersonalSemanticsToThingAliases,
   compilePersonalSemanticsForPlanner,
@@ -590,6 +592,13 @@ async function runHcmCommandPipeline(payload) {
         protected: home.stats.unresolvedBindingCount,
       }),
     });
+    const contextAgent = await runCommandStage(trace, "context_agent", async () => runContextAgent({ home }), {
+      summarize: (context) => ({
+        likelySpace: context.likelySpace?.name,
+        confidence: context.likelySpace?.confidence,
+        occupiedSpaces: context.spaces?.filter((space) => space.occupied).length ?? 0,
+      }),
+    });
     const personalSemantics = await runCommandStage(
       trace,
       "personal_semantics",
@@ -632,10 +641,11 @@ async function runHcmCommandPipeline(payload) {
           selectedRoomId: payload.selectedRoomId,
           devices: plannerDevices,
           personalSemantics,
+          context: contextAgent,
         }),
       { summarize: (draft) => ({ intent: draft.intent, intentType: draft.intent_type, actionCount: draft.actions?.length ?? 0 }) },
     );
-    const plan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
+    const normalizedPlan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
       summarize: (plan) => ({
         intent: plan.intent,
         intentType: plan.intentType,
@@ -644,13 +654,57 @@ async function runHcmCommandPipeline(payload) {
         needsConfirmation: plan.needsConfirmation,
       }),
     });
+    const accuracyGate = await runCommandStage(
+      trace,
+      "intent_accuracy",
+      async () => {
+        const analysis = evaluateIntentAccuracy({
+          input: payload.input,
+          plan: normalizedPlan,
+          home,
+          context: contextAgent,
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+        });
+        return {
+          ...applyIntentAccuracyGate(normalizedPlan, analysis),
+          analysis,
+        };
+      },
+      {
+        summarize: (result) => ({
+          ok: result.analysis.ok,
+          severity: result.analysis.severity,
+          issues: result.analysis.issues.map((issue) => issue.code),
+        }),
+      },
+    );
+    const plan = accuracyGate.plan;
     const executionPlan = await runCommandStage(trace, "safety_gate", async () => buildHcmExecutionPlan(plan.actions, home), {
       summarize: (executionPlan) => ({ accepted: executionPlan.accepted.length, rejected: executionPlan.rejected.length }),
     });
+    const policyPlan = await runCommandStage(
+      trace,
+      "policy_gate",
+      async () =>
+        evaluateExecutionPolicy({
+          plan,
+          executionPlan,
+          context: contextAgent,
+          source: payload.source || "chat",
+        }),
+      {
+        summarize: (policyPlan) => ({
+          accepted: policyPlan.accepted.length,
+          rejected: policyPlan.rejected.length,
+          policyCodes: policyPlan.summary.policyCodes,
+        }),
+      },
+    );
     const serviceSimulation = await runCommandStage(
       trace,
       "ha_service_simulator",
-      async () => simulateHcmServiceCalls(executionPlan.accepted, home),
+      async () => simulateHcmServiceCalls(policyPlan.accepted, home),
       {
         summarize: (simulation) => ({
           ok: simulation.checks.filter((check) => check.ok).length,
@@ -662,8 +716,8 @@ async function runHcmCommandPipeline(payload) {
     const execution = {
       status: "planned",
       dryRun: Boolean(payload.dryRun),
-      accepted: executionPlan.accepted.map((item) => formatAcceptedExecution(item, serviceSimulation)),
-      rejected: [...executionPlan.rejected, ...serviceSimulation.rejected],
+      accepted: policyPlan.accepted.map((item) => formatAcceptedExecution(item, serviceSimulation)),
+      rejected: [...policyPlan.rejected, ...serviceSimulation.rejected],
       simulation: serviceSimulation,
       results: [],
     };
@@ -674,7 +728,7 @@ async function runHcmCommandPipeline(payload) {
       execution.status = "no_action";
     } else if (plan.needsConfirmation) {
       execution.status = "needs_confirmation";
-    } else if (!executionPlan.ok) {
+    } else if (!policyPlan.ok) {
       execution.status = "rejected";
     } else if (!serviceSimulation.ok) {
       execution.status = "rejected";
@@ -682,7 +736,7 @@ async function runHcmCommandPipeline(payload) {
       execution.status = "dry_run";
     } else {
       execution.status = "executing";
-      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(executionPlan.accepted), {
+      execution.results = await runCommandStage(trace, "device_executor", () => executeHcmServiceCalls(policyPlan.accepted), {
         summarize: (results) => ({
           ok: results.filter((result) => result.ok).length,
           failed: results.filter((result) => !result.ok).length,
@@ -730,6 +784,7 @@ async function runHcmCommandPipeline(payload) {
       execution,
       planner,
       resolution: plan.resolution,
+      intentAccuracy: plan.intentAccuracy ?? accuracyGate.analysis,
       explanation,
       agents,
       trace: auditEntry,
@@ -829,6 +884,7 @@ async function callHcmPlannerModel(payload) {
             selectedRoomId: payload.selectedRoomId,
             devices: payload.devices,
             personal_semantics: payload.personalSemantics ?? [],
+            context: compactPlannerContext(payload.context),
           }),
         },
       ],
@@ -848,6 +904,27 @@ async function callHcmPlannerModel(payload) {
   const draft = parseJsonContent(content);
   validatePlannerDraft(draft);
   return draft;
+}
+
+function compactPlannerContext(context) {
+  if (!context) return null;
+  return {
+    likely_space: context.likelySpace
+      ? {
+          id: context.likelySpace.id,
+          name: context.likelySpace.name,
+          confidence: context.likelySpace.confidence,
+        }
+      : null,
+    occupied_spaces: (context.spaces ?? [])
+      .filter((space) => space.occupied)
+      .slice(0, 4)
+      .map((space) => ({
+        id: space.id,
+        name: space.name,
+        confidence: space.confidence,
+      })),
+  };
 }
 
 async function executeHcmServiceCalls(accepted) {

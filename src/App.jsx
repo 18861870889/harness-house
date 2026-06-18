@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import ThreeHouse from "./ThreeHouse.jsx";
+import { applyDigitalTwinLayersToScene, buildDigitalTwinLayers } from "./digitalTwinLayers.js";
 import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
@@ -114,13 +115,22 @@ export default function App() {
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
   const houseSceneModel = useMemo(
-    () =>
-      createHouseSceneModel({
+    () => {
+      const baseModel = createHouseSceneModel({
         hcmHome,
         simulatorRooms: rooms,
         simulatorDevices: devices,
-      }),
-    [devices, hcmHome],
+      });
+      const twinLayers = buildDigitalTwinLayers({
+        sceneModel: baseModel,
+        selectedRoomId,
+        context: agentSnapshot?.agents?.context,
+        plan: lastPlan,
+        diagnostics: agentSnapshot?.agents?.diagnostics,
+      });
+      return applyDigitalTwinLayersToScene(baseModel, twinLayers);
+    },
+    [agentSnapshot, devices, hcmHome, lastPlan, selectedRoomId],
   );
   const selectedRoomDevices = useMemo(
     () =>

@@ -96,12 +96,43 @@
 - Onboarding simulation 只能使用本地 simulator，不控制真实 HA 设备。
 - API 层只能生成 proposal，不能自动写入 overlay 开放真实设备。
 
-## 9. 自动化测试入口
+## 9. Intent Accuracy Engine
+
+必须覆盖：
+
+- 状态查询不能被当成控制指令拦截。
+- 合理跨房间场景，例如“我要晾衣服”，不能因为人在其它房间而误拦截。
+- 用户显式提到房间时，计划目标如果全部落在其它房间，必须要求确认。
+- 模糊当前位置表达，例如“这边有点热”，必须参考 Context Agent 的 likely space。
+- 低置信度执行必须产生可观察 issue，不能静默通过。
+
+## 10. Home Digital Twin State Layers
+
+必须覆盖：
+
+- selection 和 occupancy 是不同 layer，不能互相覆盖。
+- preview 只用于 dry-run 目标。
+- execution 只用于非 dry-run 执行目标。
+- alert 只能标记 diagnostics 中真实存在的设备。
+- UI 渲染层不能把“选中房间高亮”等同于“人在房间”。
+
+## 11. Policy & Permission System
+
+必须覆盖：
+
+- 低风险、策略范围内动作通过 policy gate。
+- 温控、亮度、风扇、窗帘等数值超出本地策略范围时，在 HA simulator 前拦截。
+- 摄像头、燃气/热水器等保护设备即使被错误 overlay 开放，也被 policy gate 拦截。
+- 洗衣机、烘干机、扫地机器人等长耗时设备启动必须要求确认或被拦截。
+- 自动化测试不能为了验证 policy 而调用真实 HA service。
+
+## 12. 自动化测试入口
 
 核心场景 benchmark 位于：
 
 - `src/harnessScenario.fixture.js`
 - `src/hcmIntentBenchmark.test.js`
+- `src/intentAccuracyEngine.test.js`
 - `src/hcmCapabilityCompression.test.js`
 - `src/personalSemantics.test.js`
 - `src/intentExplainer.test.js`
@@ -109,6 +140,8 @@
 - `src/homeAssistantServiceSimulator.test.js`
 - `src/agentRuntime.test.js`
 - `src/providerOnboarding.test.js`
+- `src/digitalTwinLayers.test.js`
+- `src/policyEngine.test.js`
 
 必须运行：
 

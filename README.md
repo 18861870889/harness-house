@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.11`
+当前进度：`v0.14`
 
 ## Core Idea
 
@@ -15,7 +15,9 @@ Provider Raw Graph
   -> Provider Adapter
   -> Harness Capability Model
   -> LLM Planner
+  -> Intent Accuracy Engine
   -> Safety Gate
+  -> Policy Gate
   -> HA Service Simulator
   -> Device Executor
   -> Audit / Learning / Agents
@@ -90,6 +92,19 @@ Provider Raw Graph
 - 新增高风险、隐私、配置、语义不清设备默认保护。
 - Onboarding 只生成 overlay proposal，不自动开放真实设备。
 - 支持记录当前 HA graph 为 baseline，后续新增/变更设备进入 Onboarding Plan。
+
+### Intent Accuracy & Policy Gates
+
+- `Intent Accuracy Engine` 在 LLM 输出后检查显式房间、人在位置、模糊表达、低置信度执行。
+- 明确房间错配和上下文错配会转为确认，不直接执行。
+- `Policy Gate` 位于 Safety Gate 之后、HA simulator 之前，处理本地权限和运行边界。
+- 当前已覆盖温控/亮度/窗帘/风扇数值范围、保护设备类型、长耗时设备启动确认。
+
+### Home Digital Twin Layers
+
+- 3D scene model 支持 `selection / occupancy / execution / alert / preview` 五类状态层。
+- 选中房间高亮和人在区域高亮已经拆分，后续语音定位和执行动画可以复用同一套 layer。
+- dry-run 目标显示为 preview，真实执行目标显示为 execution，诊断问题显示为 alert。
 
 ## Quick Start
 
@@ -218,13 +233,13 @@ Context Snapshot
 - `v0.8` HA Service Simulation & Debug Safety
 - `v0.9` Shadow Multi-Agent Runtime
 - `v0.11` Provider-to-HCM Onboarding & Adapter Abstraction
+- `v0.12` Intent Accuracy Engine
+- `v0.13` Home Digital Twin State Layers
+- `v0.14` Policy & Permission System
 
 后续重点：
 
 - `v0.10` Real Home Pilot：真实家庭小范围稳定运行。
-- `v0.12` Intent Accuracy Engine：结合人在位置、历史偏好、设备状态和歧义检测提高意图精度。
-- `v0.13` Home Digital Twin State Layers：区分 selection / occupancy / execution / alert / preview 视觉层。
-- `v0.14` Policy & Permission System：设备、房间、时间、语音入口、人在状态纳入权限系统。
 - `v1.0` Local-first Open Smart Home AI Framework。
 
 完整规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。

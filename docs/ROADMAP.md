@@ -618,6 +618,75 @@ Provider Snapshot A
 - Simulation probe tests。
 - Rename/move/remove regression tests。
 
+### v0.12 - Intent Accuracy Engine
+
+状态：已完成。跳过 v0.10 pilot 后先实现本地意图精度 gate。
+
+目标：
+
+所有真实 HCM 指令继续先经过大模型，但模型输出必须再经过本地意图精度评估，避免“模型选错房间/设备”直接进入执行链路。
+
+新增能力：
+
+- `evaluateIntentAccuracy`：评估显式房间、人在位置、模糊表达、动作目标和模型置信度。
+- `applyIntentAccuracyGate`：明显房间错配或上下文错配时，把计划转为需要确认。
+- `context_agent` 前置到真实命令主链路，给 planner 和意图评估提供只读人在位置上下文。
+- LLM prompt payload 增加 compact context，但最终 gate 由本地 deterministic runtime 判定。
+
+验收：
+
+- 状态查询不被误判成控制动作。已覆盖。
+- “我要晾衣服”这类合理跨房间场景不会被人在书房误拦截。已覆盖。
+- 明确说主卧却计划到客厅会要求确认。已覆盖。
+- “这边有点热”在书房有人时计划主卧空调会要求确认。已覆盖。
+- 低置信度执行会进入可观察 review 信号。已覆盖。
+
+### v0.13 - Home Digital Twin State Layers
+
+状态：已完成。
+
+目标：
+
+3D 房屋不再用单一高亮表达所有状态，而是拆成可组合状态层，避免“选中房间”和“人在房间”语义混淆。
+
+新增能力：
+
+- `buildDigitalTwinLayers`：生成 `selection / occupancy / execution / alert / preview` 五类状态层。
+- `applyDigitalTwinLayersToScene`：把 layer 合并到 scene rooms/devices。
+- `ThreeHouse` 根据 layer 渲染不同房间环和设备环。
+- dry-run 目标进入 preview，真实执行目标进入 execution，诊断 target 进入 alert。
+
+验收：
+
+- selection 与 occupancy 可以同时存在且互不覆盖。已覆盖。
+- dry-run 与真实执行目标使用不同 layer。已覆盖。
+- diagnostics 只标记真实存在的设备，不发明设备点。已覆盖。
+
+### v0.14 - Policy & Permission System
+
+状态：已完成当前 runtime gate 版本。
+
+目标：
+
+Safety Gate 之后增加本地策略层，收窄“能执行”和“此刻应该执行”的边界，为后续语音入口、时间窗、用户权限和真实家庭 pilot 做准备。
+
+新增能力：
+
+- `evaluateExecutionPolicy`：对 Safety Gate accepted actions 进行二次策略判定。
+- `policy_gate` 接入 `/api/hcm/command`，位于 `safety_gate` 和 `ha_service_simulator` 之间。
+- 当前策略覆盖：
+  - 保护设备类型兜底：摄像头、燃气/热水器即使错误开放也会拦截。
+  - 数值范围：空调 16-30，窗帘/灯/风扇 0-100。
+  - 长耗时设备启动：洗衣机、烘干机、扫地机器人启动需要确认。
+  - 语音入口预留：voice source 禁止配置能力。
+
+验收：
+
+- 低风险、范围内动作可以通过。已覆盖。
+- 超出策略范围的数值在 HA simulator 前被拦截。已覆盖。
+- 错误 overlay 导致保护设备变成可执行时，policy gate 仍会拦截。已覆盖。
+- 长耗时设备启动不会静默自动执行。已覆盖。
+
 ### v1.0 - Open Source AI Smart Home Framework
 
 目标：

@@ -153,6 +153,7 @@ function devicePosition(device) {
 }
 
 function isActive(device) {
+  if (device.executing || device.preview) return true;
   if (device.source === "hcm") return Boolean(device.active);
   if ("on" in device) return device.on;
   if ("detected" in device) return device.detected;
@@ -321,13 +322,17 @@ export default function ThreeHouse({ devices, sceneModel, selectedRoomId, onSele
 
 function addRooms(group, sceneRooms, selectedRoomId) {
   for (const room of sceneRooms) {
-    const active = room.id === selectedRoomId;
+    const active = room.selected ?? room.id === selectedRoomId;
+    const occupied = Boolean(room.occupied);
+    const alert = room.layers?.includes("alert");
+    const preview = room.layers?.includes("preview");
+    const executing = room.layers?.includes("execution");
     const floorMaterial = new THREE.MeshStandardMaterial({
-      color: active ? 0x486c82 : roomColor[room.type] ?? 0x2d3748,
+      color: active ? 0x486c82 : alert ? 0x5a3340 : roomColor[room.type] ?? 0x2d3748,
       roughness: 0.72,
       metalness: 0.08,
-      emissive: active ? 0x164e63 : 0x000000,
-      emissiveIntensity: active ? 0.22 : 0,
+      emissive: active ? 0x164e63 : alert ? 0x7f1d1d : preview ? 0x0f766e : executing ? 0x92400e : 0x000000,
+      emissiveIntensity: active || alert || preview || executing ? 0.22 : 0,
     });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.1, room.depth), floorMaterial);
     floor.position.set(room.x, 0, room.z);
@@ -346,16 +351,39 @@ function addRooms(group, sceneRooms, selectedRoomId) {
     label.position.set(room.x, 0.92, room.z);
     group.add(label);
 
-    if (room.presence) {
+    if (occupied) {
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.32, 0.018, 12, 48),
-        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.72 }),
+        new THREE.TorusGeometry(0.36, 0.02, 12, 48),
+        new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.82 }),
       );
       ring.rotation.x = Math.PI / 2;
       ring.position.set(room.x - room.width * 0.33, 0.14, room.z + room.depth * 0.32);
       group.add(ring);
     }
+
+    if (!occupied && room.presence) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.28, 0.014, 12, 40),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28 }),
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(room.x - room.width * 0.33, 0.14, room.z + room.depth * 0.32);
+      group.add(ring);
+    }
+
+    if (executing || preview || alert) addRoomLayerBadge(group, room, { executing, preview, alert });
   }
+}
+
+function addRoomLayerBadge(group, room, { executing, preview, alert }) {
+  const color = alert ? 0xef4444 : executing ? 0xf59e0b : 0x2dd4bf;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(Math.min(room.width, room.depth) * 0.34, 0.025, 12, 72),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.78 }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(room.x, 0.18, room.z);
+  group.add(ring);
 }
 
 function addWalls(group, room, active) {
@@ -422,7 +450,17 @@ function addDevices(group, devices, selectedRoomId, animated) {
   for (const device of Object.values(devices)) {
     const [x, z] = devicePosition(device);
     const active = isActive(device);
-    const color = active ? 0xfbbf24 : device.risk === "high" ? 0xef4444 : 0x94a3b8;
+    const color = device.alert
+      ? 0xef4444
+      : device.executing
+        ? 0xf59e0b
+        : device.preview
+          ? 0x2dd4bf
+          : active
+            ? 0xfbbf24
+            : device.risk === "high"
+              ? 0xef4444
+              : 0x94a3b8;
 
     if (device.type === "light") {
       addLightDevice(group, device, x, z, animated);
@@ -461,11 +499,25 @@ function addDevices(group, devices, selectedRoomId, animated) {
       label.position.set(x, 1.1, z);
       group.add(label);
     }
+
+    if (device.executing || device.preview || device.alert) addDeviceLayerRing(group, device, x, z);
   }
+}
+
+function addDeviceLayerRing(group, device, x, z) {
+  const color = device.alert ? 0xef4444 : device.executing ? 0xf59e0b : 0x2dd4bf;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.018, 12, 44),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.84 }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(x, 0.08, z);
+  group.add(ring);
 }
 
 function shouldShowDeviceLabel(device, active, selectedRoomId) {
   if (device.roomId === selectedRoomId) return true;
+  if (device.executing || device.preview || device.alert) return true;
   if (device.risk === "high") return true;
   if (!active) return false;
   return ["light", "ac", "fan", "curtain", "tv", "robot_vacuum", "pet_feeder"].includes(device.type);
