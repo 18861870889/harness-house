@@ -36,11 +36,11 @@ export async function applyDefaultRunPolicy({ providerId } = {}) {
   return payload;
 }
 
-export async function runHcmCommand({ input, currentRoomId, selectedRoomId, dryRun = false, source = "text" }) {
+export async function runHcmCommand({ input, currentRoomId, selectedRoomId, sessionId, dryRun = false, source = "text" }) {
   const response = await fetch("/api/hcm/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input, currentRoomId, selectedRoomId, dryRun, source }),
+    body: JSON.stringify({ input, currentRoomId, selectedRoomId, sessionId, dryRun, source }),
   });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : {};

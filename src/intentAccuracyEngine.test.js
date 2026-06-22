@@ -99,4 +99,25 @@ describe("intent accuracy engine", () => {
     expect(analysis.issues).toContainEqual(expect.objectContaining({ code: "low_model_confidence" }));
     expect(analysis.requiresConfirmation).toBe(false);
   });
+
+  it("blocks a short follow-up when the model changes the conversation target", () => {
+    const home = createHarnessScenarioHome();
+    const normalized = plan("关一下", {
+      intent_type: "device_control",
+      intent: "关闭书房吊灯",
+      confidence: 0.95,
+      actions: [{ device_id: "living_light", capability: "living_light_switch", value: false }],
+    });
+    const analysis = evaluateIntentAccuracy({
+      input: "关一下",
+      plan: normalized,
+      home,
+      conversation: { focusedTargets: [{ id: "asset_dining_餐厅射灯", name: "餐厅射灯" }] },
+    });
+
+    expect(analysis.issues).toContainEqual(
+      expect.objectContaining({ code: "conversation_target_mismatch", severity: "critical" }),
+    );
+    expect(analysis.requiresConfirmation).toBe(true);
+  });
 });

@@ -89,6 +89,7 @@ function canUseRealHcmCommand(home, llmStatus) {
 }
 
 export default function App() {
+  const sessionIdRef = useRef(crypto.randomUUID());
   const [devices, setDevices] = useState(() => structuredClone(initialDevices));
   const [input, setInput] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("study");
@@ -517,11 +518,12 @@ export default function App() {
           input: command,
           currentRoomId,
           selectedRoomId,
+          sessionId: sessionIdRef.current,
           source,
         });
         if (
           realResult.plan?.actions?.length > 0 ||
-          ["answered", "executed", "partial_failure", "rejected", "needs_confirmation", "dry_run", "no_action"].includes(
+          ["answered", "executed", "partial_failure", "rejected", "needs_confirmation", "needs_clarification", "dry_run", "no_action"].includes(
             realResult.status,
           )
         ) {
@@ -602,8 +604,8 @@ export default function App() {
   }
 
   async function handleRealCommandResult(result) {
-    const okCount = result.execution?.results?.filter((item) => item.ok).length ?? 0;
-    const failCount = result.execution?.results?.filter((item) => !item.ok).length ?? 0;
+    const okCount = result.execution?.results?.filter((item) => item.ok && item.verification?.ok !== false).length ?? 0;
+    const failCount = result.execution?.results?.filter((item) => !item.ok || item.verification?.ok === false).length ?? 0;
     const accepted = result.execution?.accepted ?? [];
     const logText =
       result.status === "answered"
@@ -612,6 +614,8 @@ export default function App() {
           ? result.plan?.summary || "没有找到可执行动作。"
           : result.status === "executed"
             ? `真实设备已执行：${accepted.map((item) => `${item.thingName} ${item.capabilityName}`).join("；")}`
+            : result.status === "needs_clarification"
+              ? result.plan?.summary || "目标或能力尚不明确，需要补充信息。"
             : result.status === "partial_failure"
               ? `真实设备部分执行：成功 ${okCount}，失败 ${failCount}`
               : result.status === "rejected"

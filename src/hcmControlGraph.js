@@ -19,6 +19,7 @@ export const ENDPOINT_MAPPING_STATUS = {
 const LIGHT_NAME_PATTERN = /灯|灯带|射灯|筒灯|吊灯|台灯|主灯|壁灯|吸顶灯|智能镜/;
 const UNUSED_NAME_PATTERN = /未使用|未定义|未绑定|无直连|空闲|预留|^开关(?:开关状态)?$/;
 const CONFIG_NAME_PATTERN = /互控|解控|绑定状态|遥控器绑定|灵动|功能选择|配置|模式|物理控制锁|童锁|延时|按键进入/;
+const REMOTE_BINDING_PATTERN = /绑定[（(]/;
 const RELAY_ENTITY_PATTERN = /_on_p_[234]_\d+$/;
 const CHANNEL_PATTERNS = [
   ["left", /左键/],
@@ -110,10 +111,23 @@ export function buildHcmControlGraph(home, { mappings = {} } = {}) {
     controllers.push(controller);
   }
 
-  const assets = Array.from(assetsById.values()).map((asset) => ({
-    ...asset,
-    endpointIds: Array.from(new Set(asset.endpointIds)),
-  }));
+  const assets = Array.from(assetsById.values()).map((asset) => {
+    const endpointIds = Array.from(new Set(asset.endpointIds));
+    const primary = endpointIds
+      .map((id) => endpoints.find((endpoint) => endpoint.id === id))
+      .filter(Boolean)
+      .sort(compareEndpointsForExecution)
+      .find((endpoint) => endpoint.status === ENDPOINT_MAPPING_STATUS.BOUND);
+    return {
+      ...asset,
+      endpointIds,
+      primaryEndpointId: primary?.id ?? null,
+      state: {
+        ...asset.state,
+        commandedState: typeof primary?.state === "boolean" ? primary.state : "unknown",
+      },
+    };
+  });
   const candidates = endpoints
     .filter((endpoint) => [ENDPOINT_MAPPING_STATUS.REVIEW, ENDPOINT_MAPPING_STATUS.UNBOUND].includes(endpoint.status))
     .map((endpoint) => ({
@@ -188,20 +202,23 @@ function createEndpoint({ home, spaces, thing, controller, capability, override 
   const explicitlyUnused = override?.status === ENDPOINT_MAPPING_STATUS.UNBOUND || UNUSED_NAME_PATTERN.test(rawAssetName);
   const ignored = override?.status === ENDPOINT_MAPPING_STATUS.IGNORED;
   const confirmed = override?.status === ENDPOINT_MAPPING_STATUS.BOUND;
+  const remoteBinding = REMOTE_BINDING_PATTERN.test(capability.name);
   const roomConflict = Boolean(explicitRoomId && thing.spaceId && thing.spaceId !== "unknown" && explicitRoomId !== thing.spaceId);
   const mappingConfidence = confirmed
     ? 1
-    : hasLightingSemantics && explicitRoomId && !roomConflict
-      ? 0.97
+    : remoteBinding
+      ? 0.68
       : hasLightingSemantics && explicitRoomId
-        ? 0.78
-        : hasLightingSemantics && targetSpaceId !== "unknown"
+      ? 0.97
+      : hasLightingSemantics && targetSpaceId !== "unknown"
           ? 0.84
           : 0.35;
   const status = ignored
     ? ENDPOINT_MAPPING_STATUS.IGNORED
     : explicitlyUnused || !hasLightingSemantics
       ? ENDPOINT_MAPPING_STATUS.UNBOUND
+      : remoteBinding
+        ? ENDPOINT_MAPPING_STATUS.REVIEW
       : confirmed || mappingConfidence >= 0.84
         ? ENDPOINT_MAPPING_STATUS.BOUND
         : ENDPOINT_MAPPING_STATUS.REVIEW;
@@ -229,11 +246,11 @@ function createEndpoint({ home, spaces, thing, controller, capability, override 
     suggestedAssetName: displayName,
     rawAssetName,
     targetSpaceId,
-    relationType: override?.relationType || CONTROL_RELATION_TYPES.RELAY,
+    relationType: override?.relationType || (remoteBinding ? CONTROL_RELATION_TYPES.REMOTE : CONTROL_RELATION_TYPES.RELAY),
     mappingStatus: confirmed ? "confirmed" : status === ENDPOINT_MAPPING_STATUS.BOUND ? "inferred" : status,
     mappingSource: confirmed ? "user_override" : "provider_semantics",
     mappingConfidence,
-    mappingReason: mappingReason({ confirmed, explicitlyUnused, ignored, hasLightingSemantics, roomConflict, explicitRoomId }),
+    mappingReason: mappingReason({ confirmed, explicitlyUnused, ignored, hasLightingSemantics, roomConflict, explicitRoomId, remoteBinding }),
   };
 }
 
@@ -328,13 +345,14 @@ function inferChannel(name, entityId) {
   return instance ? `channel_${instance}` : "unknown";
 }
 
-function mappingReason({ confirmed, explicitlyUnused, ignored, hasLightingSemantics, roomConflict, explicitRoomId }) {
+function mappingReason({ confirmed, explicitlyUnused, ignored, hasLightingSemantics, roomConflict, explicitRoomId, remoteBinding }) {
   if (confirmed) return "用户已确认通道、逻辑设备和房间映射";
   if (ignored) return "用户已忽略该控制通道";
   if (explicitlyUnused) return "通道名称表明未绑定或未使用";
   if (!hasLightingSemantics) return "通道缺少明确的受控设备名称";
-  if (roomConflict) return "通道名称房间与面板所在 HA Area 不一致，需要确认";
-  if (explicitRoomId) return "从通道名称和 HA Area 推断照明逻辑设备";
+  if (remoteBinding) return "名称表明这是远程绑定入口，需要与主执行器分离确认";
+  if (explicitRoomId && roomConflict) return "受控设备名称提供明确房间语义，控制器安装位置不参与目标房间判断";
+  if (explicitRoomId) return "从受控设备名称推断逻辑设备和房间";
   return "从照明名称和面板 HA Area 推断，建议确认";
 }
 

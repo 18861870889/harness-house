@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createProviderAdapterTemplate } from "./adapters/providerAdapterTemplate.js";
 import { createProviderCommand, createProviderSnapshotEnvelope } from "./adapters/providerAdapterSdk.js";
-import { executeSimulatedProviderPlan, simulateProviderExecutionPlan } from "./providerExecutionRuntime.js";
+import { executeSimulatedProviderPlan, simulateProviderExecutionPlan, verifyProviderExecutionResults } from "./providerExecutionRuntime.js";
 
 function fixtureAdapter() {
   const execute = vi.fn(async () => ({ status: "executed" }));
@@ -63,5 +63,46 @@ describe("provider execution runtime", () => {
 
     expect(results).toEqual([expect.objectContaining({ ok: true, providerId: "matter", service: "on_off.on" })]);
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("reads provider state back after execution and detects convergence", async () => {
+    const adapter = { readState: vi.fn(async () => ({ state: "on" })) };
+    const results = await verifyProviderExecutionResults({
+      adapter,
+      results: [{
+        ok: true,
+        service: "switch.turn_on",
+        serviceData: { entity_id: "switch.dining_spot" },
+      }],
+      wait: async () => {},
+    });
+
+    expect(results[0].verification).toMatchObject({ ok: true, code: "state_converged", actual: "on" });
+    expect(adapter.readState).toHaveBeenCalledWith("switch.dining_spot");
+  });
+
+  it("preserves executed results when provider state readback fails", async () => {
+    const adapter = { readState: vi.fn(async () => { throw new Error("provider timeout"); }) };
+    const results = await verifyProviderExecutionResults({
+      adapter,
+      results: [{ ok: true, service: "switch.turn_off", serviceData: { entity_id: "switch.hall" } }],
+      wait: async () => {},
+    });
+
+    expect(results[0]).toMatchObject({
+      ok: true,
+      verification: { ok: false, code: "state_read_failed", actual: "unknown" },
+    });
+  });
+
+  it("verifies provider-neutral boolean state without HA entity ids", async () => {
+    const adapter = { readState: vi.fn(async () => ({ on: true })) };
+    const results = await verifyProviderExecutionResults({
+      adapter,
+      results: [{ ok: true, targetId: "matter-light", service: "on_off.on", serviceData: { value: true } }],
+      wait: async () => {},
+    });
+
+    expect(results[0].verification).toMatchObject({ ok: true, actual: "on", targetId: "matter-light" });
   });
 });

@@ -164,4 +164,16 @@ describe("learning layer", () => {
       commandKey: "晾衣服",
     });
   });
+
+  it("turns clarification failures into shadow correction candidates", () => {
+    const candidates = deriveCorrectionCandidates([
+      { input: "过道射灯还有一个没关", status: "needs_clarification" },
+    ]);
+
+    expect(candidates[0]).toMatchObject({
+      input: "过道射灯还有一个没关",
+      reason: "目标、集合成员或主执行器不完整，需要补充会话语义或控制图映射",
+      safety: { autoApply: false, reason: expect.any(String) },
+    });
+  });
 });

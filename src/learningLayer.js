@@ -115,7 +115,7 @@ export function summarizeLearningMemory(memory) {
 export function deriveCorrectionCandidates(observations = []) {
   const groups = new Map();
   for (const observation of observations) {
-    if (!["no_action", "rejected", "partial_failure", "error"].includes(observation.status)) continue;
+    if (!["no_action", "needs_clarification", "rejected", "partial_failure", "error"].includes(observation.status)) continue;
     const key = normalizeCommandKey(observation.input);
     const current = groups.get(key) ?? {
       id: `correction_${stableId(key)}`,
@@ -168,6 +168,7 @@ function createObservation(auditEntry, observedAt) {
 
 function inferCorrectionReason(observation) {
   if (observation.status === "no_action") return "没有找到可执行设备或能力，可能需要补充家庭语义/设备映射";
+  if (observation.status === "needs_clarification") return "目标、集合成员或主执行器不完整，需要补充会话语义或控制图映射";
   if (observation.status === "rejected") return "安全门拒绝执行，可能需要确认风险边界或设备能力";
   if (observation.status === "partial_failure") return "部分设备执行失败，可能需要检查 provider service 支持";
   return "命令失败，需要诊断意图、设备或 adapter 映射";

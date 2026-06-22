@@ -35,7 +35,7 @@ export async function runCommandStage(trace, name, fn, { now = () => Date.now(),
   }
 }
 
-export function finishCommandTrace(trace, { status, plan, execution, explanation, agents, model, planner } = {}, now = () => Date.now()) {
+export function finishCommandTrace(trace, { status, plan, execution, explanation, agents, conversation, model, planner } = {}, now = () => Date.now()) {
   const finishedAt = now();
   const safety = summarizeSafety(plan, execution);
   const entry = {
@@ -56,6 +56,12 @@ export function finishCommandTrace(trace, { status, plan, execution, explanation
     execution: summarizeExecution(execution),
     explanation: summarizeExplanation(explanation),
     agents: summarizeAgents(agents),
+    conversation: conversation
+      ? {
+          focusedTargets: conversation.focusedTargets,
+          recentTurnCount: conversation.recentTurns?.length ?? 0,
+        }
+      : null,
     safety,
   };
   trace.status = status;
@@ -140,6 +146,17 @@ function summarizePlan(plan) {
           available: plan.stateQuery.available,
           state: plan.stateQuery.state,
           summary: plan.stateQuery.summary,
+          mode: plan.stateQuery.mode,
+          count: plan.stateQuery.count,
+          items: plan.stateQuery.items?.map((item) => ({ id: item.id, name: item.name, roomId: item.roomId, type: item.type })),
+        }
+      : null,
+    groupResolution: plan.groupResolution
+      ? {
+          mode: plan.groupResolution.mode,
+          groups: plan.groupResolution.groups,
+          unresolved: plan.groupResolution.unresolved,
+          blocked: plan.groupResolution.blocked,
         }
       : null,
     resolution: plan.resolution
@@ -177,6 +194,15 @@ function summarizeExecution(execution) {
           assumedCount: execution.simulation.checks?.filter((check) => check.code === "assumed_supported").length ?? 0,
         }
       : null,
+    results: (execution.results ?? []).map((result) => ({
+      ok: result.ok,
+      thingId: result.thingId,
+      thingName: result.thingName,
+      capabilityId: result.capabilityId,
+      service: result.service,
+      error: result.error,
+      verification: result.verification,
+    })),
   };
 }
 

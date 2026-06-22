@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.18A`
+当前进度：`v0.18.1`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -17,12 +17,14 @@ Provider Raw Graph
   -> Provider Adapter
   -> Harness Capability Model
   -> HCM Control Graph (Controller / Endpoint / Asset / Space)
+  -> Conversation Target + Group / Knowledge Resolver
   -> LLM Planner
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
   -> Provider Adapter Compile / Simulate
   -> Authorized Provider Execute
+  -> Provider State Readback
   -> Audit / Learning / Agents
 ```
 
@@ -34,6 +36,8 @@ Provider Raw Graph
 - 自动化调试默认不控制真实设备。
 - 后台 agent 只生成建议，不直接修改生产规则。
 - 主链路目标是 2 秒左右返回结果，长耗时设备不要求 2 秒内物理完成。
+- 控制请求解析失败时不能伪装成状态查询成功。
+- 集合控制要么覆盖全部可靠成员，要么不执行并明确缺失映射。
 
 ## Current Capabilities
 
@@ -72,10 +76,19 @@ Provider Raw Graph
 - 区分物理面板 `Controller`、独立继电器 `Endpoint`、用户面对的逻辑设备 `Asset` 和语义房间 `Space`。
 - 多键开关不再作为一个整体交给 Planner；每个可靠映射的灯路会生成独立逻辑设备。
 - 面板安装位置和受控设备房间相互独立，支持跨房间控制关系。
-- 未使用、未命名和房间冲突通道进入 mapping review，不允许模型猜测。
+- 未使用、未命名通道和远程绑定入口进入 mapping review，不允许模型把它们当作主执行器。
 - 生活视图显示逻辑灯具，执行时本地解析回原始 HA entity，并继续经过 Safety、Policy 和 Provider Simulator。
 - 继电器状态只表示控制回路状态，不冒充灯具真实发光状态。
 - 设计和 API 见 [docs/HCM_CONTROL_GRAPH.md](docs/HCM_CONTROL_GRAPH.md)。
+
+### Intent And Control Closed Loop
+
+- `关一下` 等省略指令使用会话中上一轮经过审计的逻辑目标；目标漂移会被拦截。
+- `客厅有几个射灯` 等知识查询由 HCM 本地聚合，模型不能编造数量。
+- `过道射灯关一下` 会展开编号集合；`还有一个没关` 只选择状态仍未满足的成员。
+- 直接继电器是主执行器，`绑定（设备）` 作为独立远程关系进入 review。
+- provider service 成功后必须回读状态，未收敛不能标记为执行成功。
+- 设计见 [docs/INTENT_CONTROL_CLOSED_LOOP.md](docs/INTENT_CONTROL_CLOSED_LOOP.md)。
 
 ### Safety & Debugging
 

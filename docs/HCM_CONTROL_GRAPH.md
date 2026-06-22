@@ -58,11 +58,11 @@ The schema allows many-to-many relationships so two-way switching and grouped ci
 ## Mapping Status
 
 - `bound`: executable logical mapping is available.
-- `review`: a candidate exists but room/name evidence conflicts.
+- `review`: a candidate exists but is a remote binding or lacks enough primary-actuator evidence.
 - `unbound`: no controlled object is known or the key is unused.
 - `ignored`: the user intentionally removed the endpoint from the household model.
 
-Automatic inference uses relay-shaped provider entities, lighting semantics, HA Area, room terms in channel names, and the existing capability policy. Configuration entities such as interlock, remote binding, flexible mode, and key-mode settings are not relay endpoints.
+Automatic inference uses relay-shaped provider entities, lighting semantics, room terms in channel names, and the existing capability policy. Explicit controlled-load room semantics take precedence over the physical controller's HA Area. Configuration entities such as interlock, flexible mode, and key-mode settings are not relay endpoints; named remote-control bindings remain separate `remote_control/review` relationships and cannot become the primary actuator.
 
 User confirmation is stored in the local HCM Overlay, keyed by stable provider entity ID:
 

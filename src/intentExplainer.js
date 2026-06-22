@@ -17,10 +17,16 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
     lines.push(`家庭语义：${plannerHints.map((hint) => `${hint.phrase} -> ${hint.candidates[0]?.thingName}`).join("；")}`);
   }
   if (rejected.length > 0) lines.push(`拒绝原因：${rejected.map((item) => item.message || item.code).join("；")}`);
+  const verification = verificationText(execution);
+  if (verification) lines.push(`状态回读：${verification}`);
   lines.push(`安全判断：${safetyText(plan, execution)}`);
 
   return {
-    title: plan?.intentType === "state_query" ? "状态读取解释" : "执行计划解释",
+    title: plan?.intentType === "inventory_query"
+      ? "家庭知识查询"
+      : plan?.intentType === "state_query"
+        ? "状态读取解释"
+        : "执行计划解释",
     summary: lines.join("\n"),
     intent: {
       type: plan?.intentType ?? "unknown",
@@ -56,12 +62,23 @@ function targetNamesFromPlan(plan) {
 
 function safetyText(plan, execution) {
   if (plan?.kind === "hcm_state_query") return "只读状态查询，不执行设备动作。";
+  if (plan?.kind === "hcm_inventory_query") return "只读家庭知识查询，不执行设备动作。";
+  if (execution?.status === "needs_clarification") return "目标或控制通道不完整，未执行任何设备动作。";
   if (plan?.needsConfirmation) return "需要用户确认后才能执行。";
   if (execution?.status === "dry_run") return "dry-run 预览，不会控制真实设备。";
   if (execution?.status === "rejected") return "安全门已拒绝执行。";
   if (execution?.status === "executed") return "低风险能力已通过 HCM 安全门。";
   if (execution?.status === "no_action") return "没有生成可执行动作。";
   return "已经过 HCM 能力边界和安全策略检查。";
+}
+
+function verificationText(execution) {
+  const results = execution?.results ?? [];
+  if (results.length === 0) return "";
+  const passed = results.filter((result) => result.verification?.ok).length;
+  const failed = results.filter((result) => result.verification && !result.verification.ok);
+  if (failed.length > 0) return `${passed} 项收敛，${failed.length} 项状态不一致`;
+  return `${passed} 项 HA 状态已收敛`;
 }
 
 function simulationText(execution) {

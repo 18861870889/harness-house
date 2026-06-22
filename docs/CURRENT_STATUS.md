@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.18A`.
+Current engineering progress: `v0.18.1`.
 
 Completed major runtime capabilities:
 
@@ -30,6 +30,11 @@ Completed major runtime capabilities:
 - HCM Control Graph separating physical controllers, relay endpoints, logical assets, and semantic rooms.
 - Logical-light planning for multi-gang switches, including strict explicit-room validation and provider-channel resolution.
 - Life-view digital twin projection showing controlled lights in their semantic rooms while preserving controller identity for maintenance.
+- Session-scoped conversation target memory with deterministic referential-command protection.
+- Inventory/count/list queries over HCM logical devices.
+- Atomic numbered-device group expansion and residual-member correction.
+- Primary relay vs remote-binding classification in the Control Graph.
+- Provider state readback after execution; service acceptance alone is not final success.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -63,21 +68,35 @@ Limit: Matter/MQTT adapters are not claimed as hardware-certified until correspo
 Status: implemented and verified against the current read-only HA snapshot.
 
 - Derives `Controller -> Endpoint -> Asset -> Space` without changing HA entities or provider data.
-- Current snapshot produces 19 physical panels, 47 relay endpoints, and 37 logical controlled assets.
+- Current snapshot produces 22 physical panels, 56 relay endpoints, and 41 logical controlled assets.
 - `入户1号开关` is resolved as two independent endpoints: left -> `餐厅射灯`, right -> `餐边柜灯带`.
-- Conflicting and unnamed channels remain review/unbound and are not exposed to the planner.
+- Unnamed channels and remote bindings remain review/unbound and are not exposed as primary actuators.
 - Planner targets logical assets and normalization resolves back to the original HCM thing/capability.
 - Explicit room mismatch is rejected for logical assets instead of relying on model similarity.
 - Relay state is labeled inferred; actual light output remains unknown without independent observation.
 - Mapping corrections persist in HCM Overlay through `POST /api/hcm/overrides/control-mappings`.
 - Digital-twin preview/execution targets logical asset IDs.
 
-Current limitation: the live HA snapshot does not expose a confirmed `书房开关` relay mapping, so `书房射灯/书房吊灯` remain unavailable rather than being guessed from similarly named lights in other rooms.
+## v0.18.1 Intent And Control Closed Loop
+
+Status: implemented and validated with the real HA snapshot using read-only queries and dry-run commands.
+
+- A failed control request can no longer degrade into an `answered` state query.
+- `关一下` and similar follow-ups use the previous audited target; mismatches are blocked as critical.
+- Numbered logical groups execute atomically; unresolved members prevent silent partial execution.
+- Corrective language such as `还有一个没关` selects only members whose relay state still differs from the requested state.
+- Inventory questions such as `客厅有几个射灯` return deterministic counts and names.
+- Explicit load-room semantics override the physical controller's HA Area.
+- Remote bindings remain review relationships and cannot replace the primary direct relay.
+- Successful execution now requires provider state convergence.
+
+Design: [INTENT_CONTROL_CLOSED_LOOP.md](INTENT_CONTROL_CLOSED_LOOP.md).
 
 ## Current Runtime Chain
 
 ```text
 User Command
+  -> Conversation Context
   -> Context Snapshot
   -> HCM Overlay + Personal Semantics
   -> HCM Control Graph
@@ -90,6 +109,7 @@ User Command
   -> Policy Gate
   -> Provider Adapter Compile / Simulate
   -> Authorized Provider Execute
+  -> Provider State Readback
   -> Audit / Learning / Agents
 ```
 

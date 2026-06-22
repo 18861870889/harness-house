@@ -9,12 +9,21 @@ export function evaluateIntentAccuracy({
   context,
   currentRoomId,
   selectedRoomId,
+  conversation,
 } = {}) {
   const text = String(input);
   const explicitSpaces = findExplicitSpaces(text, home);
   const actionTargets = resolveActionTargets(plan, home);
   const likelySpace = context?.likelySpace?.confidence >= ROOM_CONFIDENCE_THRESHOLD ? context.likelySpace : null;
   const issues = [];
+
+  if (isReferentialControlInput(text) && conversation?.focusedTargets?.length > 0 && actionTargets.length > 0) {
+    const focusedIds = new Set(conversation.focusedTargets.map((target) => target.id));
+    const matchesConversation = actionTargets.some((target) => focusedIds.has(target.logicalAssetId ?? target.thingId));
+    if (!matchesConversation) {
+      issues.push(issue("conversation_target_mismatch", "critical", "省略指令的执行目标与上一轮会话目标不一致"));
+    }
+  }
 
   if (plan?.intentType !== "state_query" && CONTROL_VERB_PATTERN.test(text) && actionTargets.length === 0) {
     issues.push(issue("no_executable_target", "high", "控制类表达没有解析出可执行目标"));
@@ -143,3 +152,4 @@ function dedupeById(items) {
     return true;
   });
 }
+import { isReferentialControlInput } from "./conversationContext.js";

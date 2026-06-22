@@ -9,6 +9,7 @@
 - 任何不存在的设备、未声明能力、只读 sensor、高风险/隐私/配置能力都不能执行。
 - 状态查询必须先由 LLM 选中 HCM thing，再由本地读取状态，不能让模型编造状态。
 - 控制指令必须输出确定性 provider service，例如 `media_player.media_pause`。
+- 控制动作解析失败时必须返回 `needs_clarification` 或拒绝，不能降级成 `answered` 查询。
 
 ## 2. 场景级覆盖
 
@@ -133,7 +134,8 @@
 - 二开面板必须生成两个独立 endpoint，不能只暴露父面板。
 - 三开面板中的未使用按键必须保持 `unbound`，不能生成逻辑设备。
 - 面板安装房间和灯具语义房间必须可以不同。
-- 跨房间推断存在冲突时必须进入 review，用户确认后才可执行。
+- 明确负载名称中的房间语义优先于物理面板 HA Area，不能因控制器安装位置不同而阻断。
+- `绑定（设备）` 等远程入口必须保持独立 `remote_control/review`，不能替换直接继电器主执行器。
 - `关闭餐厅射灯` 必须解析回对应单一 HA relay entity。
 - `关闭餐厅所有灯` 必须枚举餐厅内可靠映射的逻辑灯具，不操作未绑定按键。
 - `关闭书房射灯` 在没有书房映射时必须 no-action，不能匹配客厅或餐厅射灯。
@@ -150,7 +152,28 @@
 - `src/houseSceneModel.test.js`
 - `src/digitalTwinLayers.test.js`
 
-## 13. 自动化测试入口
+## 13. Conversation, Group, Knowledge And Verification
+
+必须覆盖：
+
+- `餐厅射灯开着吗` 后输入 `关一下`，目标仍为餐厅射灯，不能被当前选中房间替换。
+- 会话目标和模型动作目标不一致时产生 `conversation_target_mismatch/critical`，不执行。
+- `客厅有几个射灯` 返回 HCM 聚合数量和设备名，不回答某一盏灯的状态。
+- `过道射灯关一下` 展开为射灯1和射灯2；任一主执行器未确认时整个集合不执行。
+- `过道射灯还有一个没关` 只选择仍处于 `on` 的成员。
+- 直接继电器与 `绑定（设备）` 远程入口分别建模，远程入口不能成为默认主执行器。
+- 执行后调用 adapter `readState`；状态不收敛时不能标记 `executed`。
+- `needs_clarification` 进入 shadow correction candidates，不能自动学习成可执行规则。
+
+核心测试：
+
+- `src/conversationContext.test.js`
+- `src/hcmKnowledgeQuery.test.js`
+- `src/hcmControlGraph.test.js`
+- `src/providerExecutionRuntime.test.js`
+- `src/intentAccuracyEngine.test.js`
+
+## 14. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -174,7 +197,7 @@ npm test
 npm run build
 ```
 
-## 14. v0.15-v0.18 验收与后续测试焦点
+## 15. v0.15-v0.18 验收与后续测试焦点
 
 ### v0.10 Real Home Pilot
 

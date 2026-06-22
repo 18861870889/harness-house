@@ -174,7 +174,7 @@ describe("HCM intent benchmark", () => {
   ])("rejects unsafe or impossible intent: $name", ({ input, draft, rejected }) => {
     const plan = normalizeDraft(input, draft);
 
-    expect(plan.kind).toBe("empty");
+    expect(plan.kind).toBe("unresolved_control");
     expect(plan.actions).toEqual([]);
     expect(plan.rejected).toContain(rejected);
     expect(plan.resolution.targetResolution.status).toBe("unresolved");

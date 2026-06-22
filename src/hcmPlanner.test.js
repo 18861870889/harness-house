@@ -98,6 +98,15 @@ describe("hcm planner compiler", () => {
     );
   });
 
+  it("narrows a referential follow-up prompt to the focused logical target", () => {
+    const devices = compileHcmForPlanner(createPlannerHome(), {
+      input: "关一下",
+      focusTargetIds: ["asset_living_客厅灯"],
+    });
+
+    expect(devices.map((device) => device.id)).toEqual(["asset_living_客厅灯"]);
+  });
+
   it("resolves a logical light back to its physical switch channel", () => {
     const plan = normalizeHcmPlannerDraft(
       "打开客厅灯",
@@ -191,6 +200,43 @@ describe("hcm planner compiler", () => {
     expect(plan.summary).not.toBe("查询玄关传感器");
   });
 
+  it("answers inventory questions with an aggregate result", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "客厅有几个灯",
+      {
+        intent_type: "inventory_query",
+        intent: "count_lights",
+        confidence: 0.9,
+        query: { mode: "count", reason: "统计客厅灯" },
+        actions: [],
+      },
+      createPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("hcm_inventory_query");
+    expect(plan.stateQuery).toMatchObject({ mode: "count", count: 1, roomId: "living" });
+    expect(plan.actions).toEqual([]);
+  });
+
+  it("never degrades a rejected control action into a state answer", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "关闭客厅灯",
+      {
+        intent_type: "device_control",
+        intent: "turn_off_living_light",
+        confidence: 0.9,
+        query: { mode: "state", device_id: "asset_living_客厅灯" },
+        actions: [{ device_id: "asset_living_客厅灯", capability: "power_state", value: false }],
+      },
+      createPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.stateQuery).toBeNull();
+    expect(plan.requiresClarification).toBe(true);
+    expect(plan.rejected).toContain("客厅灯 不支持 power_state");
+  });
+
   it("does not allow read-only sensor capabilities as executable actions", () => {
     const plan = normalizeHcmPlannerDraft(
       "玄关人体目前是什么状态",
@@ -203,7 +249,8 @@ describe("hcm planner compiler", () => {
       createPlannerHome(),
     );
 
-    expect(plan.kind).toBe("empty");
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.requiresClarification).toBe(true);
     expect(plan.rejected).toEqual(["入户传感器 检测到移动 不是可执行控制能力"]);
   });
 

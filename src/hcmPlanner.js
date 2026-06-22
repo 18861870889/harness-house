@@ -1,11 +1,17 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS } from "./hcm.js";
-import { answerHcmThingStateQuery } from "./hcmStateQuery.js";
+import { answerHcmThingStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
+import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
+import { isReferentialControlInput } from "./conversationContext.js";
 import { createIntentResolution, normalizeIntentType } from "./intentResolution.js";
 import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
 
-export function compileHcmForPlanner(home, { currentRoomId, selectedRoomId, limit = 80 } = {}) {
+const CONTROL_REQUEST_PATTERN = /打开|开启|启动|关闭|关掉|停止|暂停|调到|设置|播放|清扫|没关|忘了关|还开着/;
+
+export function compileHcmForPlanner(home, { input = "", currentRoomId, selectedRoomId, focusTargetIds = [], limit = 80 } = {}) {
   if (!home?.things) return [];
   const preferredSpaces = new Set([currentRoomId, selectedRoomId].filter(Boolean));
+  const focusedTargets = new Set(focusTargetIds);
+  const explicitSpaces = new Set(findExplicitRoomIds(input, home));
   const graph = getHcmControlGraph(home);
   const mappedEntityIds = new Set(graph.endpoints.map((endpoint) => endpoint.entityId));
 
@@ -20,9 +26,17 @@ export function compileHcmForPlanner(home, { currentRoomId, selectedRoomId, limi
     );
   const logicalAssets = compileControlAssets(home);
 
-  return [...logicalAssets, ...physicalThings]
-    .filter((thing) => thing.capabilities.length > 0)
+  let candidates = [...logicalAssets, ...physicalThings].filter((thing) => thing.capabilities.length > 0);
+  if (explicitSpaces.size > 0) {
+    candidates = candidates.filter((thing) => explicitSpaces.has(thing.roomId) || focusedTargets.has(thing.id));
+  } else if (focusedTargets.size > 0 && isReferentialControlInput(input)) {
+    candidates = candidates.filter((thing) => focusedTargets.has(thing.id));
+  }
+
+  return candidates
     .sort((first, second) => {
+      const focusDelta = Number(focusedTargets.has(second.id)) - Number(focusedTargets.has(first.id));
+      if (focusDelta !== 0) return focusDelta;
       const spaceDelta = Number(preferredSpaces.has(second.roomId)) - Number(preferredSpaces.has(first.roomId));
       if (spaceDelta !== 0) return spaceDelta;
       return second.capabilities.length - first.capabilities.length;
@@ -34,6 +48,8 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const actions = Array.isArray(draft?.actions) ? draft.actions : [];
   const normalizedActions = [];
   const rejected = [];
+  const requestedIntentType = normalizeIntentType(draft?.intent_type, [], null);
+  const controlRequested = CONTROL_REQUEST_PATTERN.test(input) || ["device_control", "scene"].includes(requestedIntentType);
 
   for (const action of actions) {
     const result = resolvePlannerAction(input, action, home);
@@ -41,36 +57,46 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
       rejected.push(result.message);
       continue;
     }
-    normalizedActions.push({
-      thingId: result.thing.id,
-      thingName: result.logicalAsset?.name ?? result.thing.name,
-      providerThingName: result.logicalAsset ? result.thing.name : undefined,
-      logicalAssetId: result.logicalAsset?.id,
-      logicalAssetName: result.logicalAsset?.name,
-      logicalRoomId: result.logicalAsset?.spaceId,
-      capabilityId: result.capability.id,
-      capabilityName: result.logicalAsset ? `${result.logicalAsset.name}开关` : result.capability.name,
-      value: normalizePlannerValue(action.value, result.capability),
-      reason: action.reason || `${result.thing.name} ${result.capability.name}`,
-      risk: result.capability.policy.risk,
-      confirmation: result.capability.policy.confirmation,
-      binding: result.capability.binding,
-    });
+    normalizedActions.push(toNormalizedAction(result, action));
   }
-  const stateQuery = normalizedActions.length === 0 ? resolvePlannerStateQuery(input, draft, home, rejected) : null;
-  const intentType = normalizeIntentType(draft?.intent_type, normalizedActions, stateQuery);
+  if (normalizedActions.length === 0 && controlRequested) {
+    normalizedActions.push(...resolveResidualGroupActions(input, home));
+  }
+  const groupResolution = expandNumberedAssetGroup(input, normalizedActions, home);
+  const resolvedActions = groupResolution.blocked ? [] : groupResolution.actions;
+  if (groupResolution.blocked) rejected.push(...groupResolution.unresolved.map((item) => `${item.name} 没有已确认的可执行控制通道`));
+  const inventoryQuery = resolvedActions.length === 0 && !controlRequested && looksLikeInventoryQuery(input)
+    ? answerHcmInventoryQuery(input, home, draft?.query?.reason)
+    : null;
+  const stateQuery = resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
+    ? resolvePlannerStateQuery(input, draft, home, rejected)
+    : inventoryQuery;
+  const intentType = inventoryQuery
+    ? "inventory_query"
+    : controlRequested
+      ? requestedIntentType === "scene" || resolvedActions.length > 1 ? "scene" : "device_control"
+      : normalizeIntentType(draft?.intent_type, resolvedActions, stateQuery);
+  const unresolvedControl = controlRequested && resolvedActions.length === 0 && !groupResolution.satisfied;
   const resolution = createIntentResolution({
     input,
     draft,
     intentType,
     stateQuery,
-    actions: normalizedActions,
+    actions: resolvedActions,
     rejected,
   });
 
   return {
     id: crypto.randomUUID(),
-    kind: stateQuery ? "hcm_state_query" : normalizedActions.length > 0 ? "real_hcm" : "empty",
+    kind: inventoryQuery
+      ? "hcm_inventory_query"
+      : stateQuery
+        ? "hcm_state_query"
+        : unresolvedControl
+          ? "unresolved_control"
+          : resolvedActions.length > 0
+            ? "real_hcm"
+            : "empty",
     input,
     path: "hcm-real",
     intent: typeof draft?.intent === "string" ? draft.intent : intentType,
@@ -81,14 +107,19 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
         ? stateQuery.summary
         : typeof draft?.summary === "string" && draft.summary.trim()
           ? draft.summary.trim()
-        : normalizedActions.length > 0
-          ? `准备执行 ${normalizedActions.length} 个真实设备动作。`
+        : groupResolution.satisfied
+          ? "目标集合已经处于期望状态，无需执行设备动作。"
+        : resolvedActions.length > 0
+          ? `准备执行 ${resolvedActions.length} 个真实设备动作。`
           : `没有找到可执行的真实设备动作。${rejected.join("；")}`,
     needsConfirmation:
       Boolean(draft?.needs_confirmation) ||
-      normalizedActions.some((action) => ["high", "sensitive"].includes(action.risk) || action.confirmation === "always"),
-    actions: normalizedActions,
+      unresolvedControl ||
+      resolvedActions.some((action) => ["high", "sensitive"].includes(action.risk) || action.confirmation === "always"),
+    requiresClarification: unresolvedControl,
+    actions: resolvedActions,
     stateQuery,
+    groupResolution,
     resolution,
     rejected,
     createdAt: new Date().toISOString(),
@@ -103,18 +134,20 @@ export function buildHcmPlannerSystemPrompt() {
     "Never invent devices, rooms, or capabilities.",
     "Every user command must be interpreted by you first, including read-only state questions.",
     "Use personal_semantics as hints for household phrases, but still output only valid HCM device ids and capability ids.",
+    "Use conversation.focused_targets as the primary referent for short follow-ups such as 关一下, 打开它, or 也打开. Never replace that referent with the selected room.",
     "Prefer the user's selected/current room when the command is ambiguous.",
     "roomId is the semantic location of the controlled object, not necessarily the physical controller location.",
     "When the user explicitly names a room, only choose devices with that exact roomId.",
     "A logical light may be backed by a multi-gang wall switch; target the logical light device, never guess a switch panel.",
     "Only choose capabilities whose operation matches the user's intent.",
-    "For state questions, choose exactly one HCM device in query.device_id and return no actions.",
+    "For state questions, choose exactly one HCM device in query.device_id and set query.mode to state.",
+    "For inventory/count/list questions, set intent_type to inventory_query, query.mode to count or list, and return no actions.",
     "For control or scene commands, choose one or more executable capabilities in actions.",
     "Read-only capabilities may only be used to answer state questions; never put read_state capabilities in actions.",
     "For on/off controls, use boolean true or false.",
     "For temperature, brightness, fan percentage, or cover position, use a number.",
     "Return exactly this JSON shape:",
-    '{"intent_type":"state_query|device_control|scene|preference|unknown","intent":"string","confidence":0.0,"summary":"中文短句","needs_confirmation":false,"query":{"device_id":"thing id","reason":"中文短句"},"actions":[{"device_id":"thing id","capability":"capability id","value":true,"reason":"中文短句"}]}',
+    '{"intent_type":"state_query|inventory_query|device_control|scene|preference|unknown","intent":"string","confidence":0.0,"summary":"中文短句","needs_confirmation":false,"query":{"mode":"state|count|list","device_id":"thing id or empty","reason":"中文短句"},"actions":[{"device_id":"thing id","capability":"capability id","value":true,"reason":"中文短句"}]}',
   ].join("\n");
 }
 
@@ -286,6 +319,124 @@ function resolvePlannerStateQuery(input, draft, home, rejected) {
     return null;
   }
   return answer;
+}
+
+function resolveResidualGroupActions(input, home) {
+  if (!(/还有|另一个|剩下/.test(input) && /没关|还开着|未关闭/.test(input))) return [];
+  const graph = getHcmControlGraph(home);
+  const groups = new Map();
+  for (const asset of graph.assets) {
+    const stem = numberedStem(asset.name);
+    if (!stem || !String(input).includes(stem)) continue;
+    const key = `${asset.spaceId}:${stem}`;
+    const group = groups.get(key) ?? [];
+    group.push(asset);
+    groups.set(key, group);
+  }
+  const actions = [];
+  for (const assets of groups.values()) {
+    if (assets.length < 2) continue;
+    for (const asset of assets.filter((item) => item.state?.commandedState !== false)) {
+      const result = resolvePlannerAction(input, { device_id: asset.id, capability: "power", value: false }, home);
+      if (result.ok) actions.push(toNormalizedAction(result, { value: false, reason: "根据当前回路状态关闭剩余开启成员" }));
+    }
+  }
+  return dedupeActions(actions);
+}
+
+function toNormalizedAction(result, action) {
+  return {
+    thingId: result.thing.id,
+    thingName: result.logicalAsset?.name ?? result.thing.name,
+    providerThingName: result.logicalAsset ? result.thing.name : undefined,
+    logicalAssetId: result.logicalAsset?.id,
+    logicalAssetName: result.logicalAsset?.name,
+    logicalRoomId: result.logicalAsset?.spaceId,
+    capabilityId: result.capability.id,
+    capabilityName: result.logicalAsset ? `${result.logicalAsset.name}开关` : result.capability.name,
+    value: normalizePlannerValue(action.value, result.capability),
+    reason: action.reason || `${result.thing.name} ${result.capability.name}`,
+    risk: result.capability.policy.risk,
+    confirmation: result.capability.policy.confirmation,
+    binding: result.capability.binding,
+  };
+}
+
+function expandNumberedAssetGroup(input, actions, home) {
+  const graph = getHcmControlGraph(home);
+  let expanded = [...actions];
+  const unresolved = [];
+  const groups = [];
+  const processed = new Set();
+  let satisfied = false;
+
+  for (const action of actions) {
+    if (!action.logicalAssetId || typeof action.value !== "boolean") continue;
+    const stem = numberedStem(action.logicalAssetName);
+    if (!stem || !String(input).includes(stem) || String(input).includes(action.logicalAssetName)) continue;
+    const siblings = graph.assets.filter((asset) => asset.spaceId === action.logicalRoomId && numberedStem(asset.name) === stem);
+    if (siblings.length < 2) continue;
+    const groupKey = `${action.logicalRoomId}:${stem}:${action.value}`;
+    if (processed.has(groupKey)) continue;
+    processed.add(groupKey);
+    const residualOnly = /还有|另一个|剩下/.test(input) && /没关|还开着|未关闭/.test(input) && action.value === false;
+    const targets = residualOnly
+      ? siblings.filter((asset) => asset.state?.commandedState !== action.value)
+      : siblings;
+    if (residualOnly) {
+      expanded = expanded.filter((item) => !siblings.some((sibling) => sibling.id === item.logicalAssetId));
+      satisfied = targets.length === 0;
+    }
+    groups.push({ stem, assetIds: siblings.map((asset) => asset.id), targetAssetIds: targets.map((asset) => asset.id), residualOnly });
+    for (const sibling of targets) {
+      if (expanded.some((item) => item.logicalAssetId === sibling.id)) continue;
+      const result = resolvePlannerAction(input, { device_id: sibling.id, capability: "power", value: action.value }, home);
+      if (!result.ok) {
+        unresolved.push({ id: sibling.id, name: sibling.name, reason: result.message });
+        continue;
+      }
+      expanded.push({
+        thingId: result.thing.id,
+        thingName: sibling.name,
+        providerThingName: result.thing.name,
+        logicalAssetId: sibling.id,
+        logicalAssetName: sibling.name,
+        logicalRoomId: sibling.spaceId,
+        capabilityId: result.capability.id,
+        capabilityName: `${sibling.name}开关`,
+        value: action.value,
+        reason: `集合指令 ${stem}`,
+        risk: result.capability.policy.risk,
+        confirmation: result.capability.policy.confirmation,
+        binding: result.capability.binding,
+      });
+    }
+  }
+
+  return {
+    mode: groups.length > 0 ? "numbered_group" : "single",
+    groups,
+    actions: dedupeActions(expanded),
+    unresolved,
+    blocked: unresolved.length > 0,
+    satisfied,
+  };
+}
+
+function numberedStem(name) {
+  const text = String(name ?? "").trim();
+  const stem = text.replace(/[0-9一二三四五六七八九十]+$/, "");
+  return stem !== text && stem.length >= 2 ? stem : null;
+}
+
+function dedupeActions(actions) {
+  const seen = new Set();
+  return actions.filter((action) => {
+    const key = `${action.thingId}:${action.capabilityId}:${action.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function compactThingState(thing) {

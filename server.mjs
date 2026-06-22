@@ -24,7 +24,7 @@ import {
   setThingOverride,
 } from "./src/hcmOverlay.js";
 import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
-import { executeSimulatedProviderPlan, simulateProviderExecutionPlan } from "./src/providerExecutionRuntime.js";
+import { executeSimulatedProviderPlan, simulateProviderExecutionPlan, verifyProviderExecutionResults } from "./src/providerExecutionRuntime.js";
 import { evaluateExecutionPolicy } from "./src/policyEngine.js";
 import {
   buildHcmPlannerSystemPrompt,
@@ -38,6 +38,7 @@ import {
   compilePersonalSemanticsForPlanner,
 } from "./src/personalSemantics.js";
 import { createCommandTrace, finishCommandTrace, runCommandStage } from "./src/commandRuntime.js";
+import { createConversationContextStore } from "./src/conversationContext.js";
 import {
   createLearningMemory,
   deleteLearningCandidate,
@@ -60,6 +61,7 @@ const homeAssistantAdapter = createHomeAssistantAdapter({
 });
 const providerRegistry = createProviderAdapterRegistry([homeAssistantAdapter]);
 const activeProviderAdapter = providerRegistry.get(HOME_ASSISTANT_ADAPTER_ID);
+const conversationContextStore = createConversationContextStore();
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -598,6 +600,9 @@ function validateHcmCommandRequest(payload) {
   if (payload.replayOf !== undefined && typeof payload.replayOf !== "string") {
     throw badRequest("replayOf must be a string");
   }
+  if (payload.sessionId !== undefined && typeof payload.sessionId !== "string") {
+    throw badRequest("sessionId must be a string");
+  }
 }
 
 function validateReplayRequest(payload) {
@@ -716,6 +721,7 @@ async function runHcmCommandPipeline(payload) {
   });
 
   try {
+    const conversation = conversationContextStore.get(payload.sessionId);
     const rawHome = await runCommandStage(trace, "context_snapshot", () => activeProviderAdapter.discoverHcmHome(), {
       summarize: (home) => ({ things: home.stats?.thingCount, capabilities: home.stats?.capabilityCount }),
     });
@@ -748,8 +754,10 @@ async function runHcmCommandPipeline(payload) {
       "prompt_compile",
       async () =>
         compileHcmForPlanner(home, {
+          input: payload.input,
           currentRoomId: payload.currentRoomId,
           selectedRoomId: payload.selectedRoomId,
+          focusTargetIds: conversation.focusedTargets.map((target) => target.id),
         }),
       {
         summarize: (devices) => ({
@@ -775,6 +783,7 @@ async function runHcmCommandPipeline(payload) {
           devices: plannerDevices,
           personalSemantics,
           context: contextAgent,
+          conversation,
         }),
       { summarize: (draft) => ({ intent: draft.intent, intentType: draft.intent_type, actionCount: draft.actions?.length ?? 0 }) },
     );
@@ -798,6 +807,7 @@ async function runHcmCommandPipeline(payload) {
           context: contextAgent,
           currentRoomId: payload.currentRoomId,
           selectedRoomId: payload.selectedRoomId,
+          conversation,
         });
         return {
           ...applyIntentAccuracyGate(normalizedPlan, analysis),
@@ -855,8 +865,10 @@ async function runHcmCommandPipeline(payload) {
       results: [],
     };
 
-    if (plan.kind === "hcm_state_query") {
+    if (["hcm_state_query", "hcm_inventory_query"].includes(plan.kind)) {
       execution.status = "answered";
+    } else if (plan.requiresClarification || (plan.needsConfirmation && plan.actions.length === 0)) {
+      execution.status = "needs_clarification";
     } else if (plan.actions.length === 0) {
       execution.status = "no_action";
     } else if (plan.needsConfirmation) {
@@ -869,7 +881,7 @@ async function runHcmCommandPipeline(payload) {
       execution.status = "dry_run";
     } else {
       execution.status = "executing";
-      execution.results = await runCommandStage(
+      const rawResults = await runCommandStage(
         trace,
         "device_executor",
         () => executeSimulatedProviderPlan({ adapter: activeProviderAdapter, simulation: serviceSimulation, commandId: trace.commandId }),
@@ -880,8 +892,23 @@ async function runHcmCommandPipeline(payload) {
         }),
         },
       );
-      execution.status = execution.results.every((result) => result.ok) ? "executed" : "partial_failure";
+      execution.results = await runCommandStage(
+        trace,
+        "state_verifier",
+        () => verifyProviderExecutionResults({ adapter: activeProviderAdapter, results: rawResults }),
+        {
+          summarize: (results) => ({
+            verified: results.filter((result) => result.verification?.ok).length,
+            mismatched: results.filter((result) => !result.verification?.ok).length,
+          }),
+        },
+      );
+      execution.status = execution.results.every((result) => result.ok && result.verification?.ok) ? "executed" : "partial_failure";
     }
+
+    const conversationAfter = !payload.dryRun && payload.source !== "replay"
+      ? conversationContextStore.record(payload.sessionId, { input: payload.input, plan, execution })
+      : conversation;
 
     const explanation = explainIntentResult({
       input: payload.input,
@@ -906,6 +933,7 @@ async function runHcmCommandPipeline(payload) {
       execution,
       explanation,
       agents,
+      conversation: conversationAfter,
       model: getModel(),
       planner,
     });
@@ -925,6 +953,7 @@ async function runHcmCommandPipeline(payload) {
       intentAccuracy: plan.intentAccuracy ?? accuracyGate.analysis,
       explanation,
       agents,
+      conversation: conversationAfter,
       trace: auditEntry,
     };
   } catch (error) {
@@ -1023,6 +1052,7 @@ async function callHcmPlannerModel(payload) {
             devices: payload.devices,
             personal_semantics: payload.personalSemantics ?? [],
             context: compactPlannerContext(payload.context),
+            conversation: compactConversationContext(payload.conversation),
           }),
         },
       ],
@@ -1042,6 +1072,18 @@ async function callHcmPlannerModel(payload) {
   const draft = parseJsonContent(content);
   validatePlannerDraft(draft);
   return draft;
+}
+
+function compactConversationContext(conversation) {
+  if (!conversation) return null;
+  return {
+    focused_targets: (conversation.focusedTargets ?? []).map((target) => ({
+      id: target.id,
+      name: target.name,
+      room_id: target.roomId,
+    })),
+    recent_turns: (conversation.recentTurns ?? []).slice(-4),
+  };
 }
 
 function compactPlannerContext(context) {

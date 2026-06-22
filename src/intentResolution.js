@@ -1,6 +1,7 @@
 export const INTENT_TYPES = {
   DEVICE_CONTROL: "device_control",
   STATE_QUERY: "state_query",
+  INVENTORY_QUERY: "inventory_query",
   SCENE: "scene",
   PREFERENCE: "preference",
   UNKNOWN: "unknown",
