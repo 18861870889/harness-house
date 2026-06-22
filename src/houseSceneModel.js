@@ -71,7 +71,8 @@ export function getSceneRoomName(roomId, sceneRooms = []) {
 }
 
 function createRoomsFromHcm(home) {
-  const thingCounts = countThingsBySpace(home.things);
+  const displayThings = createLifeViewThings(home);
+  const thingCounts = countThingsBySpace(displayThings);
   const activeSpaces = home.spaces.filter((space) => thingCounts.get(space.id) > 0);
   const rooms = activeSpaces.map((space, index) => {
     const layout = ROOM_LAYOUTS[space.id] ?? createFallbackLayout(index);
@@ -98,7 +99,7 @@ function createRoomsFromHcm(home) {
 function createDevicesFromHcm(home, sceneRooms) {
   const roomsById = new Map(sceneRooms.map((room) => [room.id, room]));
   const thingsByRoom = new Map();
-  for (const thing of home.things) {
+  for (const thing of createLifeViewThings(home)) {
     const roomId = roomsById.has(thing.spaceId) ? thing.spaceId : "unknown";
     if (!thingsByRoom.has(roomId)) thingsByRoom.set(roomId, []);
     thingsByRoom.get(roomId).push(thing);
@@ -127,14 +128,57 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
     type: normalizeThingType(thing.type),
     risk: thing.policy?.risk ?? "low",
     online: thing.online,
-    source: "hcm",
+    source: thing.logicalAsset ? "hcm-control-graph" : "hcm",
+    logicalAsset: Boolean(thing.logicalAsset),
+    providerThingId: thing.providerThingId,
     sceneX: x,
     sceneZ: z,
     autoExecutable,
     controllable,
     readable,
-    statusLabel: autoExecutable > 0 ? `${autoExecutable}/${controllable} auto` : readable > 0 ? `${readable} read` : "protected",
+    statusLabel: thing.logicalAsset
+      ? logicalAssetStatusLabel(thing)
+      : autoExecutable > 0
+        ? `${autoExecutable}/${controllable} auto`
+        : readable > 0
+          ? `${readable} read`
+          : "protected",
   };
+}
+
+function createLifeViewThings(home) {
+  const graph = getHcmControlGraph(home);
+  const logicalAssets = graph.assets
+    .map((asset) => {
+      const resolved = resolveControlAsset(home, asset.id);
+      if (!resolved?.endpoint || !resolved.thing || !resolved.capability) return null;
+      return {
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        spaceId: asset.spaceId,
+        online: resolved.thing.online,
+        policy: resolved.capability.policy,
+        providerThingId: resolved.thing.id,
+        logicalAsset: true,
+        state: {
+          ...asset.state,
+          autoExecutable: resolved.capability.policy?.autoExecutable ? 1 : 0,
+          controllable: 1,
+          readable: asset.state?.commandedState === "unknown" ? 0 : 1,
+        },
+      };
+    })
+    .filter(Boolean);
+  if (logicalAssets.length === 0) return home.things;
+  return [...home.things.filter((thing) => thing.type !== "switch_panel"), ...logicalAssets];
+}
+
+function logicalAssetStatusLabel(thing) {
+  const state = thing.state?.commandedState;
+  if (state === true) return "回路开启";
+  if (state === false) return "回路关闭";
+  return thing.online === false ? "控制器离线" : "状态未知";
 }
 
 function normalizeThingType(type) {
@@ -224,3 +268,4 @@ function roomRank(roomId) {
 function roundPoint(value) {
   return Math.round(value * 100) / 100;
 }
+import { getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";

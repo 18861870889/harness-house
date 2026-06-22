@@ -20,6 +20,7 @@ import {
   applyHcmOverlay,
   createHcmOverlay,
   setBindingReviewDecision,
+  setControlEndpointMapping,
   setThingOverride,
 } from "./src/hcmOverlay.js";
 import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
@@ -185,6 +186,24 @@ app.post("/api/hcm/overrides/things", (request, response) => {
   } catch (error) {
     response.status(error.statusCode || 400).json({
       error: error.message || "HCM thing override update failed",
+    });
+  }
+});
+
+app.post("/api/hcm/overrides/control-mappings", (request, response) => {
+  try {
+    const payload = request.body ?? {};
+    validateControlMappingRequest(payload);
+    const overlay = setControlEndpointMapping(readHcmOverlay(), {
+      providerId: payload.providerId || HOME_ASSISTANT_ADAPTER_ID,
+      entityId: payload.entityId,
+      patch: payload.patch,
+    });
+    writeHcmOverlay(overlay);
+    response.json(overlay);
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "HCM control mapping update failed",
     });
   }
 });
@@ -537,6 +556,19 @@ function validateThingOverrideRequest(payload) {
   if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
   if (typeof payload.thingId !== "string" || !payload.thingId.trim()) {
     throw badRequest("thingId is required");
+  }
+  if (!payload.patch || typeof payload.patch !== "object" || Array.isArray(payload.patch)) {
+    throw badRequest("patch is required");
+  }
+  if (payload.providerId !== undefined && typeof payload.providerId !== "string") {
+    throw badRequest("providerId must be a string");
+  }
+}
+
+function validateControlMappingRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (typeof payload.entityId !== "string" || !payload.entityId.trim()) {
+    throw badRequest("entityId is required");
   }
   if (!payload.patch || typeof payload.patch !== "object" || Array.isArray(payload.patch)) {
     throw badRequest("patch is required");
@@ -1042,7 +1074,10 @@ function formatAcceptedExecution(item, simulation) {
   );
   return {
     thingId: item.thing.id,
-    thingName: item.thing.name,
+    thingName: item.action.logicalAssetName ?? item.action.thingName ?? item.thing.name,
+    providerThingName: item.thing.name,
+    logicalAssetId: item.action.logicalAssetId,
+    logicalRoomId: item.action.logicalRoomId,
     capabilityId: item.capability.id,
     capabilityName: item.capability.name,
     value: item.action.value,

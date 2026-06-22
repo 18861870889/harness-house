@@ -64,6 +64,20 @@ export async function updateHcmThingOverride({ providerId, thingId, patch }) {
   return payload;
 }
 
+export async function updateHcmControlMapping({ providerId, entityId, patch }) {
+  const response = await fetch("/api/hcm/overrides/control-mappings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ providerId, entityId, patch }),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `HCM control mapping update failed ${response.status}`);
+  }
+  return payload;
+}
+
 export async function getCommandAudit({ limit = 8 } = {}) {
   const response = await fetch(`/api/commands/audit?limit=${encodeURIComponent(limit)}`);
   const text = await response.text();

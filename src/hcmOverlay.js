@@ -1,4 +1,5 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS, createHcmHome } from "./hcm.js";
+import { attachHcmControlGraph } from "./hcmControlGraph.js";
 
 export const HCM_OVERLAY_VERSION = "0.1";
 
@@ -86,6 +87,24 @@ export function setThingOverride(
   return next;
 }
 
+export function setControlEndpointMapping(
+  overlay,
+  { providerId = "home_assistant", entityId, patch = {}, updatedAt = new Date().toISOString() } = {},
+) {
+  if (!entityId || typeof entityId !== "string") throw new Error("entityId is required");
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("patch is required");
+  const next = normalizeOverlay(overlay);
+  const provider = ensureProvider(next, providerId);
+  provider.controlMappings[entityId] = {
+    ...provider.controlMappings[entityId],
+    ...pickControlMappingPatch(patch),
+    entityId,
+    updatedAt,
+  };
+  next.updatedAt = updatedAt;
+  return next;
+}
+
 export function applyDefaultRunPolicy(
   overlay,
   home,
@@ -127,7 +146,7 @@ export function applyDefaultRunPolicy(
 export function applyHcmOverlay(home, overlay, { defaultRunPolicy = true } = {}) {
   const normalizedOverlay = normalizeOverlay(overlay);
   const providerId = home.provider?.id ?? "unknown";
-  const providerOverlay = normalizedOverlay.providers[providerId] ?? { bindings: {}, things: {} };
+  const providerOverlay = normalizedOverlay.providers[providerId] ?? { bindings: {}, things: {}, controlMappings: {} };
   const unresolvedByEntity = new Map(home.unresolvedBindings.map((binding) => [binding.entityId, binding]));
   const defaultPolicy = {
     enabled: defaultRunPolicy,
@@ -163,13 +182,13 @@ export function applyHcmOverlay(home, overlay, { defaultRunPolicy = true } = {})
       return nextThing;
     });
 
-  const nextHome = createHcmHome({
+  const nextHome = attachHcmControlGraph(createHcmHome({
     provider: home.provider,
     spaces: home.spaces,
     things,
     unresolvedBindings: buildUnresolvedBindings(things),
     syncedAt: home.syncedAt,
-  });
+  }), { mappings: providerOverlay.controlMappings });
   return attachOverlayStats(nextHome, normalizedOverlay, defaultPolicy);
 }
 
@@ -182,10 +201,12 @@ export function summarizeOverlay(overlay) {
   const normalizedOverlay = normalizeOverlay(overlay);
   const providers = Object.values(normalizedOverlay.providers);
   let bindingOverrideCount = 0;
+  let controlMappingCount = 0;
   const decisions = {};
 
   for (const provider of providers) {
     const bindings = Object.values(provider.bindings ?? {});
+    controlMappingCount += Object.keys(provider.controlMappings ?? {}).length;
     bindingOverrideCount += bindings.length;
     for (const binding of bindings) {
       decisions[binding.decision] = (decisions[binding.decision] || 0) + 1;
@@ -197,6 +218,7 @@ export function summarizeOverlay(overlay) {
     updatedAt: normalizedOverlay.updatedAt,
     providerCount: providers.length,
     bindingOverrideCount,
+    controlMappingCount,
     disabledThingCount: providers.reduce(
       (sum, provider) => sum + Object.values(provider.things ?? {}).filter((thing) => thing.disabled).length,
       0,
@@ -212,6 +234,8 @@ function normalizeOverlay(overlay) {
     providers[providerId] = {
       bindings: provider.bindings && typeof provider.bindings === "object" ? { ...provider.bindings } : {},
       things: provider.things && typeof provider.things === "object" ? { ...provider.things } : {},
+      controlMappings:
+        provider.controlMappings && typeof provider.controlMappings === "object" ? { ...provider.controlMappings } : {},
     };
   }
   return createHcmOverlay({
@@ -225,9 +249,21 @@ function ensureProvider(overlay, providerId) {
     overlay.providers[providerId] = {
       bindings: {},
       things: {},
+      controlMappings: {},
     };
   }
   return overlay.providers[providerId];
+}
+
+function pickControlMappingPatch(patch) {
+  const picked = {};
+  if (["bound", "review", "unbound", "ignored"].includes(patch.status)) picked.status = patch.status;
+  if (typeof patch.assetName === "string" && patch.assetName.trim()) picked.assetName = patch.assetName.trim();
+  if (typeof patch.spaceId === "string" && patch.spaceId.trim()) picked.spaceId = patch.spaceId.trim();
+  if (["relay_control", "remote_control", "scene_trigger", "power_dependency"].includes(patch.relationType)) {
+    picked.relationType = patch.relationType;
+  }
+  return picked;
 }
 
 function applyCapabilityOverride(capability, binding, override, defaultOverride) {

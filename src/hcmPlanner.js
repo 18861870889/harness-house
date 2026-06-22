@@ -1,13 +1,26 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS } from "./hcm.js";
 import { answerHcmThingStateQuery } from "./hcmStateQuery.js";
 import { createIntentResolution, normalizeIntentType } from "./intentResolution.js";
+import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
 
 export function compileHcmForPlanner(home, { currentRoomId, selectedRoomId, limit = 80 } = {}) {
   if (!home?.things) return [];
   const preferredSpaces = new Set([currentRoomId, selectedRoomId].filter(Boolean));
+  const graph = getHcmControlGraph(home);
+  const mappedEntityIds = new Set(graph.endpoints.map((endpoint) => endpoint.entityId));
 
-  return home.things
-    .map((thing) => compileThing(thing))
+  const physicalThings = home.things
+    .map((thing) =>
+      compileThing(
+        thing,
+        thing.type === "switch_panel"
+          ? (capability) => capability.binding?.domain === "light" && !mappedEntityIds.has(capability.binding?.entityId)
+          : () => true,
+      ),
+    );
+  const logicalAssets = compileControlAssets(home);
+
+  return [...logicalAssets, ...physicalThings]
     .filter((thing) => thing.capabilities.length > 0)
     .sort((first, second) => {
       const spaceDelta = Number(preferredSpaces.has(second.roomId)) - Number(preferredSpaces.has(first.roomId));
@@ -23,16 +36,20 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const rejected = [];
 
   for (const action of actions) {
-    const result = resolvePlannerAction(action, home);
+    const result = resolvePlannerAction(input, action, home);
     if (!result.ok) {
       rejected.push(result.message);
       continue;
     }
     normalizedActions.push({
       thingId: result.thing.id,
-      thingName: result.thing.name,
+      thingName: result.logicalAsset?.name ?? result.thing.name,
+      providerThingName: result.logicalAsset ? result.thing.name : undefined,
+      logicalAssetId: result.logicalAsset?.id,
+      logicalAssetName: result.logicalAsset?.name,
+      logicalRoomId: result.logicalAsset?.spaceId,
       capabilityId: result.capability.id,
-      capabilityName: result.capability.name,
+      capabilityName: result.logicalAsset ? `${result.logicalAsset.name}开关` : result.capability.name,
       value: normalizePlannerValue(action.value, result.capability),
       reason: action.reason || `${result.thing.name} ${result.capability.name}`,
       risk: result.capability.policy.risk,
@@ -87,6 +104,9 @@ export function buildHcmPlannerSystemPrompt() {
     "Every user command must be interpreted by you first, including read-only state questions.",
     "Use personal_semantics as hints for household phrases, but still output only valid HCM device ids and capability ids.",
     "Prefer the user's selected/current room when the command is ambiguous.",
+    "roomId is the semantic location of the controlled object, not necessarily the physical controller location.",
+    "When the user explicitly names a room, only choose devices with that exact roomId.",
+    "A logical light may be backed by a multi-gang wall switch; target the logical light device, never guess a switch panel.",
     "Only choose capabilities whose operation matches the user's intent.",
     "For state questions, choose exactly one HCM device in query.device_id and return no actions.",
     "For control or scene commands, choose one or more executable capabilities in actions.",
@@ -98,8 +118,8 @@ export function buildHcmPlannerSystemPrompt() {
   ].join("\n");
 }
 
-function compileThing(thing) {
-  const plannerCapabilities = (thing.capabilities ?? []).filter(isPlannerCapability).map((capability) => ({
+function compileThing(thing, includeCapability = () => true) {
+  const plannerCapabilities = (thing.capabilities ?? []).filter(includeCapability).filter(isPlannerCapability).map((capability) => ({
     id: capability.id,
     name: capability.name,
     kind: capability.kind,
@@ -119,6 +139,54 @@ function compileThing(thing) {
     state: compactThingState(thing),
     capabilities: plannerCapabilities,
   };
+}
+
+function compileControlAssets(home) {
+  const graph = getHcmControlGraph(home);
+  return graph.assets
+    .map((asset) => {
+      const resolved = resolveControlAsset(home, asset.id);
+      const capability = resolved?.capability;
+      const executable = capability && isPlannerExecutableCapability(capability);
+      const capabilities = [];
+      if (executable) {
+        capabilities.push({
+          id: "power",
+          name: `${asset.name}开关`,
+          kind: CAPABILITY_KINDS.CONTROL,
+          valueType: "boolean",
+          operation: "on_off",
+          state: asset.state?.commandedState,
+          domain: capability.binding?.domain,
+          access: "execute",
+        });
+      }
+      if (!executable && asset.state?.commandedState !== "unknown") {
+        capabilities.push({
+          id: "power_state",
+          name: `${asset.name}回路状态`,
+          kind: CAPABILITY_KINDS.SENSOR,
+          valueType: "boolean",
+          operation: "read_state",
+          state: asset.state.commandedState,
+          domain: capability?.binding?.domain,
+          access: "read",
+        });
+      }
+      return {
+        id: asset.id,
+        name: asset.name,
+        roomId: asset.spaceId,
+        type: asset.type,
+        aliases: asset.aliases ?? [],
+        logicalAsset: true,
+        mappingStatus: asset.mappingStatus,
+        mappingConfidence: asset.mappingConfidence,
+        state: asset.state,
+        capabilities,
+      };
+    })
+    .filter((asset) => asset.capabilities.length > 0);
 }
 
 function isPlannerCapability(capability) {
@@ -151,7 +219,30 @@ function plannerValueType(capability) {
   return capability.valueType || "boolean";
 }
 
-function resolvePlannerAction(action, home) {
+function resolvePlannerAction(input, action, home) {
+  const logical = resolveControlAsset(home, action?.device_id);
+  if (logical?.asset) {
+    if (action?.capability !== "power") {
+      return { ok: false, message: `${logical.asset.name} 不支持 ${action?.capability ?? ""}` };
+    }
+    const explicitRoomIds = findExplicitRoomIds(input, home);
+    if (explicitRoomIds.length > 0 && !explicitRoomIds.includes(logical.asset.spaceId)) {
+      return { ok: false, message: `${logical.asset.name} 不在用户指定的房间` };
+    }
+    if (!logical.endpoint || !logical.thing || !logical.capability) {
+      return { ok: false, message: `${logical.asset.name} 没有已确认的可执行控制通道` };
+    }
+    if (!isPlannerExecutableCapability(logical.capability)) {
+      return { ok: false, message: `${logical.asset.name} 的控制通道不是可自动执行能力` };
+    }
+    return {
+      ok: true,
+      logicalAsset: logical.asset,
+      endpoint: logical.endpoint,
+      thing: logical.thing,
+      capability: logical.capability,
+    };
+  }
   const thing = home.things.find((item) => item.id === action?.device_id);
   if (!thing) return { ok: false, message: `未知设备 ${action?.device_id ?? ""}` };
   const capability = thing.capabilities.find((item) => item.id === action?.capability);

@@ -38,20 +38,20 @@ describe("digital twin layers", () => {
       sceneModel,
       plan: {
         commandResult: { status: "dry_run" },
-        steps: [{ deviceId: "living_light" }],
+        steps: [{ deviceId: "asset_living_客厅灯" }],
       },
     });
     const executedLayers = buildDigitalTwinLayers({
       sceneModel,
       plan: {
         commandResult: { status: "executed" },
-        steps: [{ deviceId: "living_light" }],
+        steps: [{ deviceId: "asset_living_客厅灯" }],
       },
     });
 
-    expect(dryRunLayers.layers.preview.deviceIds).toEqual(["living_light"]);
+    expect(dryRunLayers.layers.preview.deviceIds).toEqual(["asset_living_客厅灯"]);
     expect(dryRunLayers.layers.execution.deviceIds).toEqual([]);
-    expect(executedLayers.layers.execution.deviceIds).toEqual(["living_light"]);
+    expect(executedLayers.layers.execution.deviceIds).toEqual(["asset_living_客厅灯"]);
     expect(executedLayers.layers.preview.deviceIds).toEqual([]);
   });
 
@@ -61,11 +61,11 @@ describe("digital twin layers", () => {
       sceneModel,
       plan: {
         commandResult: { status: "needs_confirmation" },
-        steps: [{ deviceId: "living_light" }],
+        steps: [{ deviceId: "asset_living_客厅灯" }],
       },
     });
 
-    expect(layers.layers.preview.deviceIds).toEqual(["living_light"]);
+    expect(layers.layers.preview.deviceIds).toEqual(["asset_living_客厅灯"]);
     expect(layers.layers.execution.deviceIds).toEqual([]);
   });
 

@@ -35,8 +35,10 @@ export function createIntentResolution({
   }
   for (const action of actions) {
     targetCandidates.push({
-      thingId: action.thingId,
-      thingName: action.thingName,
+      thingId: action.logicalAssetId ?? action.thingId,
+      thingName: action.logicalAssetName ?? action.thingName,
+      providerThingId: action.logicalAssetId ? action.thingId : undefined,
+      roomId: action.logicalRoomId,
       role: "control_target",
       confidence: clampConfidence(draft?.confidence),
       evidence: evidenceList([action.reason, "llm_selected_action_target", "hcm_capability_exists"]),
@@ -55,7 +57,9 @@ export function createIntentResolution({
     capabilityResolution: {
       status: actions.length > 0 ? "resolved" : stateQuery ? "read_only" : "none",
       capabilities: actions.map((action) => ({
-        thingId: action.thingId,
+        thingId: action.logicalAssetId ?? action.thingId,
+        providerThingId: action.logicalAssetId ? action.thingId : undefined,
+        roomId: action.logicalRoomId,
         capabilityId: action.capabilityId,
         capabilityName: action.capabilityName,
         value: action.value,

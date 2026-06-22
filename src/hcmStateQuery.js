@@ -44,6 +44,8 @@ export function answerHcmStateQuery(input, home) {
 }
 
 export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
+  const logical = resolveControlAsset(home, thingId);
+  if (logical?.asset) return formatControlAssetState(logical, home, reason);
   const thing = home?.things?.find((item) => item.id === thingId);
   if (!thing) return null;
   const roomName = preferredRoomName(normalize(input), home, thing);
@@ -55,6 +57,31 @@ export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
     reason,
     summary: formatThingState(thing, roomName),
   };
+}
+
+function formatControlAssetState({ asset, endpoint, thing }, home, reason) {
+  const roomName = home?.spaces?.find((space) => space.id === asset.spaceId)?.name ?? asset.spaceId;
+  const state = asset.state?.commandedState;
+  const relayState = state === true ? "控制回路已开启" : state === false ? "控制回路已关闭" : "控制回路状态未知";
+  const controller = endpoint && thing ? `，由${thing.name}${channelLabel(endpoint.channel)}控制` : "";
+  return {
+    path: "hcm-control-asset-state",
+    thingId: asset.id,
+    thingName: asset.name,
+    logicalAssetId: asset.id,
+    roomId: asset.spaceId,
+    controllerId: endpoint?.controllerId,
+    endpointId: endpoint?.id,
+    reason,
+    summary: `${roomName}的${asset.name}：${relayState}${controller}。该状态来自开关继电器，未独立确认灯具实际发光。`,
+  };
+}
+
+function channelLabel(channel) {
+  if (channel === "left") return "左键";
+  if (channel === "middle") return "中键";
+  if (channel === "right") return "右键";
+  return channel && channel !== "unknown" ? channel : "通道";
 }
 
 export function looksLikeStateQuery(text) {
@@ -218,3 +245,4 @@ function normalize(input) {
     .replace(/\s+/g, "")
     .replace(/[，。！？,.!?]/g, "");
 }
+import { resolveControlAsset } from "./hcmControlGraph.js";

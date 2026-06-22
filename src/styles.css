@@ -1023,6 +1023,80 @@ button {
   color: var(--amber);
 }
 
+.control-graph-summary {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(69, 111, 104, 0.16);
+}
+
+.control-graph-header,
+.control-graph-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.control-graph-header {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.control-graph-header strong {
+  color: #287a5a;
+}
+
+.control-graph-metrics {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.control-graph-metrics strong {
+  color: var(--text);
+}
+
+.control-graph-candidates {
+  display: grid;
+  gap: 5px;
+}
+
+.control-graph-candidates > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 7px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(69, 111, 104, 0.1);
+}
+
+.control-graph-candidates strong,
+.control-graph-candidates span,
+.control-graph-candidates small {
+  min-width: 0;
+  font-size: 10px;
+}
+
+.control-graph-candidates strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-graph-candidates span {
+  color: var(--amber);
+}
+
+.control-graph-candidates small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .binding-review {
   margin-top: 9px;
   padding: 8px;

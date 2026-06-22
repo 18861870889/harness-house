@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
+import { attachHcmControlGraph } from "./hcmControlGraph.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 
 describe("house scene model", () => {
@@ -81,5 +82,53 @@ describe("house scene model", () => {
       rooms: [expect.objectContaining({ id: "study" })],
       devices: [expect.objectContaining({ id: "light" })],
     });
+  });
+
+  it("shows logical lights in their semantic room instead of the physical switch panel", () => {
+    const home = attachHcmControlGraph(createHcmHome({
+      provider: { id: "home_assistant", name: "Home Assistant" },
+      spaces: [
+        { id: "entry", name: "入户" },
+        { id: "dining", name: "餐厅" },
+      ],
+      things: [
+        {
+          id: "entry_panel",
+          name: "入户1号开关",
+          type: "switch_panel",
+          spaceId: "dining",
+          online: true,
+          capabilities: [
+            {
+              id: "dining_spot",
+              name: "餐厅射灯 开关左键",
+              kind: "control",
+              valueType: "boolean",
+              state: true,
+              policy: { risk: "low", confirmation: "never", autoExecutable: true },
+              binding: {
+                provider: "home_assistant",
+                domain: "switch",
+                entityId: "switch.entry_panel_on_p_2_1",
+              },
+            },
+          ],
+        },
+      ],
+    }));
+
+    const model = createHouseSceneModel({ hcmHome: home });
+
+    expect(model.devices).toContainEqual(
+      expect.objectContaining({
+        id: "asset_dining_餐厅射灯",
+        name: "餐厅射灯",
+        roomId: "dining",
+        logicalAsset: true,
+        providerThingId: "entry_panel",
+        statusLabel: "回路开启",
+      }),
+    );
+    expect(model.devices.some((device) => device.id === "entry_panel")).toBe(false);
   });
 });

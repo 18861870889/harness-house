@@ -629,7 +629,8 @@ export default function App() {
       explanation: result.explanation,
       steps: accepted.map((item) => ({
         id: `${item.thingId}:${item.capabilityId}`,
-        deviceId: item.thingId,
+        deviceId: item.logicalAssetId ?? item.thingId,
+        providerDeviceId: item.thingId,
         deviceName: item.thingName,
         capability: item.capabilityName,
         value: item.value,
@@ -1023,6 +1024,7 @@ function HcmCatalog({
               <span>保护 {defaultPolicy.protected}</span>
             </div>
           )}
+          <ControlGraphSummary graph={home.controlGraph} />
           <CapabilityBoundarySummary summary={home.capabilitySummary} />
           <BindingReview
             review={home.review}
@@ -1050,6 +1052,44 @@ function HcmCatalog({
       )}
     </section>
   );
+}
+
+function ControlGraphSummary({ graph }) {
+  if (!graph) return null;
+  const stats = graph.stats ?? {};
+  const candidates = graph.candidates ?? [];
+  return (
+    <div className="control-graph-summary">
+      <div className="control-graph-header">
+        <span>Control Graph</span>
+        <strong>{stats.assetCount ?? 0} 个逻辑设备</strong>
+      </div>
+      <div className="control-graph-metrics">
+        <span>面板 <strong>{stats.controllerCount ?? 0}</strong></span>
+        <span>通道 <strong>{stats.endpointCount ?? 0}</strong></span>
+        <span>已映射 <strong>{stats.boundCount ?? 0}</strong></span>
+        <span>待确认 <strong>{(stats.reviewCount ?? 0) + (stats.unboundCount ?? 0)}</strong></span>
+      </div>
+      {candidates.length > 0 && (
+        <div className="control-graph-candidates">
+          {candidates.slice(0, 3).map((candidate) => (
+            <div key={candidate.id}>
+              <strong>{candidate.controllerName} · {channelName(candidate.channel)}</strong>
+              <span>{candidate.suggestedAssetName || "未绑定设备"}</span>
+              <small>{candidate.reason}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function channelName(channel) {
+  if (channel === "left") return "左键";
+  if (channel === "middle") return "中键";
+  if (channel === "right") return "右键";
+  return channel === "unknown" ? "未知通道" : channel;
 }
 
 function OnboardingPanel({ onboarding, actionId, onRecordBaseline }) {

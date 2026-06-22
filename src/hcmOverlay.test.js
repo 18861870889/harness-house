@@ -6,6 +6,7 @@ import {
   applyHcmOverlay,
   createHcmOverlay,
   setBindingReviewDecision,
+  setControlEndpointMapping,
   setThingOverride,
   summarizeOverlay,
 } from "./hcmOverlay.js";
@@ -316,5 +317,38 @@ describe("hcm overlay", () => {
 
     expect(home.things).toHaveLength(0);
     expect(home.overlay.disabledThingCount).toBe(1);
+  });
+
+  it("persists a confirmed logical asset mapping separately from HA entity policy", () => {
+    const overlay = setControlEndpointMapping(createHcmOverlay(), {
+      providerId: "home_assistant",
+      entityId: "switch.living_left",
+      patch: {
+        status: "bound",
+        assetName: "书房射灯",
+        spaceId: "study",
+        relationType: "relay_control",
+      },
+    });
+    const source = createReviewHome();
+    source.spaces.push({ id: "study", name: "书房", aliases: [], provider: null });
+    const home = applyHcmOverlay(source, overlay);
+
+    expect(home.overlay.controlMappingCount).toBe(1);
+    expect(home.controlGraph.assets).toContainEqual(
+      expect.objectContaining({
+        id: "asset_study_书房射灯",
+        name: "书房射灯",
+        spaceId: "study",
+        mappingStatus: "confirmed",
+      }),
+    );
+    expect(home.controlGraph.endpoints).toContainEqual(
+      expect.objectContaining({
+        entityId: "switch.living_left",
+        status: "bound",
+        mappingSource: "user_override",
+      }),
+    );
   });
 });

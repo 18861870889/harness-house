@@ -40,7 +40,11 @@ export function validateHcmAction(action, home) {
     capability,
     action: {
       thingId: thing.id,
-      thingName: thing.name,
+      thingName: action.logicalAssetName ?? action.thingName ?? thing.name,
+      providerThingName: thing.name,
+      logicalAssetId: action.logicalAssetId,
+      logicalAssetName: action.logicalAssetName,
+      logicalRoomId: action.logicalRoomId,
       capabilityId: capability.id,
       capabilityName: capability.name,
       value: normalizedValue,

@@ -1,10 +1,10 @@
 # Current Status
 
-> Last updated: 2026-06-18. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
+> Last updated: 2026-06-22. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
 
 ## Current Version
 
-Current engineering progress: `v0.17`.
+Current engineering progress: `v0.18A`.
 
 Completed major runtime capabilities:
 
@@ -27,6 +27,9 @@ Completed major runtime capabilities:
 - Capability Evidence attached to HCM capabilities.
 - Simulator and Home Assistant adapters passing the same read-only Contract Harness.
 - Adapter Registry and gated provider execution with simulation, authorization, and command audit identity.
+- HCM Control Graph separating physical controllers, relay endpoints, logical assets, and semantic rooms.
+- Logical-light planning for multi-gang switches, including strict explicit-room validation and provider-channel resolution.
+- Life-view digital twin projection showing controlled lights in their semantic rooms while preserving controller identity for maintenance.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -55,12 +58,29 @@ Status: completed for the SDK and current-provider migration scope.
 
 Limit: Matter/MQTT adapters are not claimed as hardware-certified until corresponding devices or certified fixtures are available. The SDK contract and mock portability path are complete.
 
+## v0.18A Multi-Gang Switch Control Graph
+
+Status: implemented and verified against the current read-only HA snapshot.
+
+- Derives `Controller -> Endpoint -> Asset -> Space` without changing HA entities or provider data.
+- Current snapshot produces 19 physical panels, 47 relay endpoints, and 37 logical controlled assets.
+- `入户1号开关` is resolved as two independent endpoints: left -> `餐厅射灯`, right -> `餐边柜灯带`.
+- Conflicting and unnamed channels remain review/unbound and are not exposed to the planner.
+- Planner targets logical assets and normalization resolves back to the original HCM thing/capability.
+- Explicit room mismatch is rejected for logical assets instead of relying on model similarity.
+- Relay state is labeled inferred; actual light output remains unknown without independent observation.
+- Mapping corrections persist in HCM Overlay through `POST /api/hcm/overrides/control-mappings`.
+- Digital-twin preview/execution targets logical asset IDs.
+
+Current limitation: the live HA snapshot does not expose a confirmed `书房开关` relay mapping, so `书房射灯/书房吊灯` remain unavailable rather than being guessed from similarly named lights in other rooms.
+
 ## Current Runtime Chain
 
 ```text
 User Command
   -> Context Snapshot
   -> HCM Overlay + Personal Semantics
+  -> HCM Control Graph
   -> Context Agent Snapshot
   -> Prompt Compile
   -> LLM Planner

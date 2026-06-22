@@ -69,10 +69,12 @@ describe("hcm planner compiler", () => {
     expect(devices).toEqual(
       expect.arrayContaining([
       expect.objectContaining({
-        id: "ha_light",
+        id: "asset_living_客厅灯",
+        logicalAsset: true,
+        roomId: "living",
         capabilities: [
           expect.objectContaining({
-            id: "living_light",
+            id: "power",
             operation: "on_off",
           }),
         ],
@@ -94,6 +96,45 @@ describe("hcm planner compiler", () => {
       }),
       ]),
     );
+  });
+
+  it("resolves a logical light back to its physical switch channel", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "打开客厅灯",
+      {
+        intent: "lighting",
+        confidence: 0.9,
+        actions: [{ device_id: "asset_living_客厅灯", capability: "power", value: true }],
+      },
+      createPlannerHome(),
+    );
+
+    expect(plan.actions).toEqual([
+      expect.objectContaining({
+        thingId: "ha_light",
+        thingName: "客厅灯",
+        providerThingName: "客厅灯",
+        logicalAssetId: "asset_living_客厅灯",
+        logicalRoomId: "living",
+        capabilityId: "living_light",
+        value: true,
+      }),
+    ]);
+  });
+
+  it("rejects a logical light from a room that conflicts with the explicit user room", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "打开书房的灯",
+      {
+        intent: "lighting",
+        confidence: 0.7,
+        actions: [{ device_id: "asset_living_客厅灯", capability: "power", value: true }],
+      },
+      createPlannerHome(),
+    );
+
+    expect(plan.actions).toEqual([]);
+    expect(plan.rejected).toContain("客厅灯 不在用户指定的房间");
   });
 
   it("normalizes model drafts into HCM actions", () => {

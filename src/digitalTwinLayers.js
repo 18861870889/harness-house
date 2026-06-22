@@ -83,7 +83,7 @@ function occupiedRoomIds(context, roomIds) {
 function targetDeviceIds(plan, deviceIds, layer) {
   if (!plan || planLayer(plan) !== layer) return [];
   return (plan.steps ?? [])
-    .map((step) => step.deviceId)
+    .map((step) => step.logicalAssetId ?? step.deviceId)
     .filter((deviceId) => deviceIds.has(deviceId));
 }
 

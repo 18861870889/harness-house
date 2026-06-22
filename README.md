@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.17`
+当前进度：`v0.18A`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -16,6 +16,7 @@ Harness House 的核心范式是：
 Provider Raw Graph
   -> Provider Adapter
   -> Harness Capability Model
+  -> HCM Control Graph (Controller / Endpoint / Asset / Space)
   -> LLM Planner
   -> Intent Accuracy Engine
   -> Safety Gate
@@ -65,6 +66,16 @@ Provider Raw Graph
   - `Policy`
 - HCM Overlay 保存本地审核结果。
 - 默认保护摄像头、燃气、配置项、文本项、敏感传感器。
+
+### Multi-Gang Switch Control Graph
+
+- 区分物理面板 `Controller`、独立继电器 `Endpoint`、用户面对的逻辑设备 `Asset` 和语义房间 `Space`。
+- 多键开关不再作为一个整体交给 Planner；每个可靠映射的灯路会生成独立逻辑设备。
+- 面板安装位置和受控设备房间相互独立，支持跨房间控制关系。
+- 未使用、未命名和房间冲突通道进入 mapping review，不允许模型猜测。
+- 生活视图显示逻辑灯具，执行时本地解析回原始 HA entity，并继续经过 Safety、Policy 和 Provider Simulator。
+- 继电器状态只表示控制回路状态，不冒充灯具真实发光状态。
+- 设计和 API 见 [docs/HCM_CONTROL_GRAPH.md](docs/HCM_CONTROL_GRAPH.md)。
 
 ### Safety & Debugging
 
@@ -177,7 +188,7 @@ OPENAI_MODEL=gpt-4o-mini
 
 ```bash
 OPENAI_API_KEY=your_key_here
-OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
 ```
 
@@ -217,6 +228,7 @@ POST /api/hcm/command
 GET  /api/hcm/overrides
 POST /api/hcm/overrides/bindings
 POST /api/hcm/overrides/things
+POST /api/hcm/overrides/control-mappings
 POST /api/hcm/overrides/default-run
 
 GET  /api/commands/audit

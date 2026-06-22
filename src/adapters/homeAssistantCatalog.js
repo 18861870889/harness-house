@@ -1,4 +1,5 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS, createHcmHome, stableId } from "../hcm.js";
+import { attachHcmControlGraph } from "../hcmControlGraph.js";
 import { createCapabilityEvidence } from "./providerAdapterSdk.js";
 
 const CONTROL_DOMAINS = new Set(["light", "switch", "fan", "cover", "climate", "media_player", "vacuum"]);
@@ -75,13 +76,14 @@ export function mapHomeAssistantGraphToHcm(graph) {
     things.push(thing);
   }
 
-  return createHcmHome({
+  const home = createHcmHome({
     provider,
     spaces: Array.from(areas.values()),
     things,
     unresolvedBindings: dedupeUnresolved(unresolvedBindings),
     syncedAt: graph.fetchedAt,
   });
+  return attachHcmControlGraph(home);
 }
 
 function mapAreas(areas) {

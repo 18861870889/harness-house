@@ -18,11 +18,11 @@ describe("HCM intent benchmark", () => {
     expect(thingIds).not.toContain("cat_camera");
     expect(thingIds).not.toContain("gas_water_heater");
 
-    const livingLight = plannerHome.find((thing) => thing.id === "living_light");
-    expect(livingLight.capabilities.map((capability) => capability.id)).toEqual(
-      expect.arrayContaining(["living_light_switch", "living_light_brightness"]),
-    );
-    expect(livingLight.capabilities.map((capability) => capability.id)).not.toContain("living_light_binding");
+    const logicalLivingLight = plannerHome.find((thing) => thing.id === "asset_living_客厅灯");
+    expect(logicalLivingLight.capabilities.map((capability) => capability.id)).toEqual(["power"]);
+    const livingLightControls = plannerHome.find((thing) => thing.id === "living_light");
+    expect(livingLightControls.capabilities.map((capability) => capability.id)).toEqual(["living_light_brightness"]);
+    expect(livingLightControls.capabilities.map((capability) => capability.id)).not.toContain("living_light_binding");
   });
 
   it.each([

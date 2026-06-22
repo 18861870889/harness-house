@@ -126,7 +126,31 @@
 - 洗衣机、烘干机、扫地机器人等长耗时设备启动必须要求确认或被拦截。
 - 自动化测试不能为了验证 policy 而调用真实 HA service。
 
-## 12. 自动化测试入口
+## 12. Multi-Gang Switch Control Graph
+
+必须覆盖：
+
+- 二开面板必须生成两个独立 endpoint，不能只暴露父面板。
+- 三开面板中的未使用按键必须保持 `unbound`，不能生成逻辑设备。
+- 面板安装房间和灯具语义房间必须可以不同。
+- 跨房间推断存在冲突时必须进入 review，用户确认后才可执行。
+- `关闭餐厅射灯` 必须解析回对应单一 HA relay entity。
+- `关闭餐厅所有灯` 必须枚举餐厅内可靠映射的逻辑灯具，不操作未绑定按键。
+- `关闭书房射灯` 在没有书房映射时必须 no-action，不能匹配客厅或餐厅射灯。
+- HA 互控、绑定、模式、童锁和其它配置 switch 不能进入 relay endpoint graph。
+- 状态查询只能回答“控制回路开启/关闭”，没有独立证据时不能声称灯具真实发光。
+- Digital Twin 生活视图显示逻辑灯具，preview/execution 使用逻辑 asset ID。
+- 自动测试只能使用 fixture、当前只读快照和 dry-run，不调用 HA services。
+
+核心实现和测试：
+
+- `src/hcmControlGraph.js`
+- `src/hcmControlGraph.test.js`
+- `src/hcmPlanner.test.js`
+- `src/houseSceneModel.test.js`
+- `src/digitalTwinLayers.test.js`
+
+## 13. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -150,7 +174,7 @@ npm test
 npm run build
 ```
 
-## 13. v0.15-v0.16 验收与后续测试焦点
+## 14. v0.15-v0.18 验收与后续测试焦点
 
 ### v0.10 Real Home Pilot
 
@@ -194,3 +218,11 @@ npm run build
 - snapshot/evidence 中的 token、password、authorization 和 API key 必须被移除。
 - Simulator 和 Home Assistant 必须通过同一 Contract `1.0`。
 - 直连 Home Assistant action API 必须返回 `410`，真实控制只能进入 `/api/hcm/command`。
+
+### v0.18A Multi-Gang Switch Control Graph
+
+- 当前 HA snapshot 必须得到稳定 controller/endpoint/asset 数量。
+- Mapping override 必须按 entity ID 持久化且不修改 provider 原始名称。
+- Planner payload 不应暴露可直接猜测的多键面板 relay；应暴露逻辑设备 `power` 能力。
+- normalize、executor、audit 和 digital twin 必须同时保留逻辑 asset 和 provider thing identity。
+- 房间冲突必须在本地 normalize/accuracy 层发现，不能依赖 LLM 自觉修正。
