@@ -164,4 +164,21 @@ describe("HCM control graph", () => {
     expect(answer.summary).toContain("控制回路已开启");
     expect(answer.summary).toContain("未独立确认灯具实际发光");
   });
+
+  it("reports an unknown logical light state when its controller is offline", () => {
+    const home = createMultiGangHome();
+    home.things[0].online = false;
+    home.things[0].capabilities[0].state = "unavailable";
+    const answer = answerHcmThingStateQuery(
+      "餐厅射灯现在开着吗",
+      attachHcmControlGraph(home),
+      "asset_dining_餐厅射灯",
+      "查询灯光",
+    );
+
+    expect(answer).toMatchObject({ available: false, state: "unknown" });
+    expect(answer.summary).toContain("状态未知");
+    expect(answer.summary).toMatch(/当前离线|尚未确认控制通道/);
+    expect(answer.summary).not.toContain("已开启");
+  });
 });

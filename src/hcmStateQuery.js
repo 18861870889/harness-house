@@ -61,9 +61,15 @@ export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
 
 function formatControlAssetState({ asset, endpoint, thing }, home, reason) {
   const roomName = home?.spaces?.find((space) => space.id === asset.spaceId)?.name ?? asset.spaceId;
+  const displayName = String(asset.name).includes(String(roomName)) ? asset.name : `${roomName}的${asset.name}`;
   const state = asset.state?.commandedState;
+  const controllerUnavailable = !endpoint || !thing || thing.online === false || ["unavailable", "unknown"].includes(endpoint.state);
   const relayState = state === true ? "控制回路已开启" : state === false ? "控制回路已关闭" : "控制回路状态未知";
   const controller = endpoint && thing ? `，由${thing.name}${channelLabel(endpoint.channel)}控制` : "";
+  const unavailableReason = !endpoint || !thing ? "尚未确认控制通道" : `控制器${thing.name}当前离线`;
+  const summary = controllerUnavailable
+    ? `${displayName}：状态未知，${unavailableReason}。未执行任何设备动作。`
+    : `${displayName}：${relayState}${controller}。该状态来自开关继电器，未独立确认灯具实际发光。`;
   return {
     path: "hcm-control-asset-state",
     thingId: asset.id,
@@ -72,8 +78,10 @@ function formatControlAssetState({ asset, endpoint, thing }, home, reason) {
     roomId: asset.spaceId,
     controllerId: endpoint?.controllerId,
     endpointId: endpoint?.id,
+    available: !controllerUnavailable,
+    state: controllerUnavailable ? "unknown" : state,
     reason,
-    summary: `${roomName}的${asset.name}：${relayState}${controller}。该状态来自开关继电器，未独立确认灯具实际发光。`,
+    summary,
   };
 }
 

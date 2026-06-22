@@ -137,6 +137,9 @@ function summarizePlan(plan) {
           thingId: plan.stateQuery.thingId,
           thingName: plan.stateQuery.thingName,
           roomId: plan.stateQuery.roomId,
+          available: plan.stateQuery.available,
+          state: plan.stateQuery.state,
+          summary: plan.stateQuery.summary,
         }
       : null,
     resolution: plan.resolution

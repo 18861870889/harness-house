@@ -6,7 +6,7 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
 
   lines.push(`我理解为：${plan?.summary || plan?.intent || input || "未识别指令"}`);
   if (targetNames.length > 0) lines.push(`目标设备：${targetNames.join("、")}`);
-  if (plan?.stateQuery) lines.push(`读取状态：${plan.stateQuery.thingName}`);
+  if (plan?.stateQuery) lines.push(`读取结果：${plan.stateQuery.summary}`);
   if ((plan?.actions ?? []).length > 0) {
     lines.push(`执行能力：${plan.actions.map((action) => `${action.thingName} ${action.capabilityName}`).join("；")}`);
   }

@@ -66,7 +66,7 @@ describe("intent explainer", () => {
     });
 
     expect(explanation.title).toBe("状态读取解释");
-    expect(explanation.summary).toContain("读取状态：入户传感器");
+    expect(explanation.summary).toContain("读取结果：玄关的入户传感器");
     expect(explanation.summary).toContain("只读状态查询，不执行设备动作");
   });
 });

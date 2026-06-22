@@ -77,10 +77,10 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     intentType,
     confidence: clampConfidence(draft?.confidence),
     summary:
-      typeof draft?.summary === "string" && draft.summary.trim()
-        ? draft.summary.trim()
-        : stateQuery
-          ? stateQuery.summary
+      stateQuery
+        ? stateQuery.summary
+        : typeof draft?.summary === "string" && draft.summary.trim()
+          ? draft.summary.trim()
         : normalizedActions.length > 0
           ? `准备执行 ${normalizedActions.length} 个真实设备动作。`
           : `没有找到可执行的真实设备动作。${rejected.join("；")}`,

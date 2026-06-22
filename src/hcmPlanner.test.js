@@ -166,6 +166,7 @@ describe("hcm planner compiler", () => {
         intent_type: "state_query",
         intent: "query_motion_sensor",
         confidence: 0.9,
+        summary: "查询玄关传感器",
         actions: [],
         query: { device_id: "entry_motion", reason: "用户询问玄关人体状态" },
       },
@@ -186,6 +187,8 @@ describe("hcm planner compiler", () => {
       capabilityResolution: { status: "read_only" },
     });
     expect(plan.actions).toEqual([]);
+    expect(plan.summary).toBe(plan.stateQuery.summary);
+    expect(plan.summary).not.toBe("查询玄关传感器");
   });
 
   it("does not allow read-only sensor capabilities as executable actions", () => {
