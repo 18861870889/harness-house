@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
 import { attachHcmControlGraph } from "./hcmControlGraph.js";
-import { answerHcmRoomLightStateQuery, answerHcmStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
+import {
+  answerHcmOccupancyStateQuery,
+  answerHcmRoomLightStateQuery,
+  answerHcmStateQuery,
+  looksLikeStateQuery,
+} from "./hcmStateQuery.js";
 
 function createStateHome() {
   return createHcmHome({
@@ -81,10 +86,75 @@ function createStudyLightHome() {
   }));
 }
 
+function createOccupancyHome() {
+  return createHcmHome({
+    provider: { id: "home_assistant", name: "Home Assistant" },
+    spaces: [{ id: "kitchen", name: "厨房" }],
+    things: [
+      {
+        id: "kitchen_presence",
+        name: "小米人在传感器-厨房",
+        type: "presence_sensor",
+        spaceId: "kitchen",
+        capabilities: [
+          {
+            id: "occupancy",
+            name: "存在传感器 有人无人状态",
+            kind: "sensor",
+            valueType: "boolean",
+            state: false,
+            binding: { entityId: "binary_sensor.kitchen_occupancy", domain: "binary_sensor" },
+          },
+          {
+            id: "illuminance",
+            name: "存在传感器 光照度",
+            kind: "sensor",
+            valueType: "number",
+            state: 43,
+            binding: { entityId: "sensor.kitchen_illuminance", domain: "sensor" },
+          },
+          {
+            id: "no_one_duration",
+            name: "存在传感器 无人持续时长",
+            kind: "sensor",
+            valueType: "unknown",
+            state: "10 Minutes",
+            binding: { entityId: "sensor.kitchen_no_one_duration", domain: "sensor" },
+          },
+        ],
+      },
+    ],
+  });
+}
+
 describe("HCM state query", () => {
   it("recognizes read-only state questions", () => {
     expect(looksLikeStateQuery("玄关人体目前是什么状态")).toBe(true);
+    expect(looksLikeStateQuery("厨房有人不")).toBe(true);
     expect(looksLikeStateQuery("打开玄关灯")).toBe(false);
+  });
+
+  it("answers room occupancy questions from presence sensors", () => {
+    const answer = answerHcmOccupancyStateQuery("厨房有人不", createOccupancyHome(), "查询厨房人在状态");
+
+    expect(answer).toMatchObject({
+      path: "hcm-occupancy-state",
+      thingId: "kitchen_presence",
+      thingName: "小米人在传感器-厨房",
+      roomId: "kitchen",
+      state: false,
+      available: true,
+    });
+    expect(answer.summary).toBe("厨房无人。数据来自小米人在传感器-厨房。");
+  });
+
+  it("does not mix stale no-one duration into an occupied presence answer", () => {
+    const home = createOccupancyHome();
+    home.things[0].capabilities.find((capability) => capability.id === "occupancy").state = true;
+    const answer = answerHcmStateQuery("厨房有人不", home, "查询厨房人在状态");
+
+    expect(answer.summary).toContain("有人");
+    expect(answer.summary).not.toContain("无人持续");
   });
 
   it("answers a specific entry motion sensor instead of a whole-home summary", () => {

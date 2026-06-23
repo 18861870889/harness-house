@@ -1,8 +1,14 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS } from "./hcm.js";
-import { answerHcmRoomLightStateQuery, answerHcmThingStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
+import {
+  answerHcmOccupancyStateQuery,
+  answerHcmRoomLightStateQuery,
+  answerHcmStateQuery,
+  answerHcmThingStateQuery,
+  looksLikeStateQuery,
+} from "./hcmStateQuery.js";
 import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
-import { isReferentialControlInput } from "./conversationContext.js";
-import { createIntentResolution, normalizeIntentType } from "./intentResolution.js";
+import { isComfortFollowUpInput, isReferentialControlInput } from "./conversationContext.js";
+import { INTENT_TYPES, createIntentResolution, normalizeIntentType } from "./intentResolution.js";
 import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
 import { normalizeIntentFrame } from "./intentFrame.js";
 import { normalizeSemanticPlannerActions, resolveSemanticGrounding } from "./semanticGroundingResolver.js";
@@ -33,8 +39,12 @@ export function compileHcmForPlanner(
   const logicalAssets = compileControlAssets(home);
 
   let candidates = [...logicalAssets, ...physicalThings].filter((thing) => thing.capabilities.length > 0);
+  const focusedTargetRooms = new Set(candidates.filter((thing) => focusedTargets.has(thing.id)).map((thing) => thing.roomId).filter(Boolean));
+  const referentialRooms = new Set([...focusedRooms, ...focusedTargetRooms]);
   if (explicitSpaces.size > 0) {
     candidates = candidates.filter((thing) => explicitSpaces.has(thing.roomId) || focusedTargets.has(thing.id));
+  } else if (referentialRooms.size > 0 && isComfortFollowUpInput(input)) {
+    candidates = candidates.filter((thing) => referentialRooms.has(thing.roomId));
   } else if (focusedTargets.size > 0 && isReferentialControlInput(input)) {
     candidates = candidates.filter((thing) => focusedTargets.has(thing.id));
   } else if (focusedRooms.size > 0 && isReferentialControlInput(input)) {
@@ -62,6 +72,18 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     intent_type: intentFrame.intentType,
     query: intentFrame.query ?? draft?.query,
   };
+  const correctionPlan = maybeCorrectionFeedbackPlan(input, normalizedDraft);
+  if (correctionPlan) {
+    return attachSemanticDiagnostics(correctionPlan, {
+      input,
+      intentFrame: { ...intentFrame, intentType: INTENT_TYPES.CORRECTION },
+      draftActions: intentFrame.actions,
+      normalizedActions: [],
+      stateQuery: null,
+      rejected: [],
+      home,
+    });
+  }
   const preferencePlan = maybePreferenceFeedbackPlan(input, normalizedDraft);
   if (preferencePlan) {
     return attachSemanticDiagnostics(preferencePlan, {
@@ -103,17 +125,35 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query"
       ? answerHcmRoomLightStateQuery(input, home, normalizedDraft?.query?.reason)
       : null;
+  const selectedStateQuery =
+    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input) && hasStateQueryTarget(normalizedDraft)
+      ? resolvePlannerStateQuery(input, normalizedDraft, home, rejected)
+      : null;
+  const occupancyStateQuery =
+    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && requestedIntentType === "state_query"
+      ? answerHcmOccupancyStateQuery(input, home, normalizedDraft?.query?.reason)
+      : null;
+  const localStateQuery =
+    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && !occupancyStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
+      ? answerHcmStateQuery(input, home, normalizedDraft?.query?.reason)
+      : null;
   const stateQuery = roomLightStateQuery
     ? roomLightStateQuery
-    : resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
-      ? resolvePlannerStateQuery(input, normalizedDraft, home, rejected)
-      : inventoryQuery;
+    : selectedStateQuery
+      ? selectedStateQuery
+    : occupancyStateQuery
+      ? occupancyStateQuery
+    : localStateQuery
+      ? localStateQuery
+    : inventoryQuery;
   const intentType = inventoryQuery
     ? "inventory_query"
     : controlRequested
       ? requestedIntentType === "scene" || resolvedActions.length > 1 ? "scene" : "device_control"
       : normalizeIntentType(draft?.intent_type, resolvedActions, stateQuery);
   const unresolvedControl = controlRequested && resolvedActions.length === 0 && !groupResolution.satisfied;
+  const unresolvedStateQuery = requestedIntentType === "state_query" && !stateQuery && !inventoryQuery && looksLikeStateQuery(input);
+  if (unresolvedStateQuery && rejected.length === 0) rejected.push("状态查询目标不够明确");
   const resolution = createIntentResolution({
     input,
     draft: normalizedDraft,
@@ -131,6 +171,8 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
         ? "hcm_state_query"
         : unresolvedControl
           ? "unresolved_control"
+          : unresolvedStateQuery
+            ? "needs_clarification"
           : resolvedActions.length > 0
             ? "real_hcm"
             : "empty",
@@ -146,6 +188,8 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
           ? "目标集合已经处于期望状态，无需执行设备动作。"
         : unresolvedControl && rejected.length > 0
           ? `没有继续执行：${rejected.join("；")}。`
+        : unresolvedStateQuery
+          ? summarizeStateClarification(input, home)
         : typeof draft?.summary === "string" && draft.summary.trim()
           ? draft.summary.trim()
         : resolvedActions.length > 0
@@ -154,8 +198,9 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     needsConfirmation:
       Boolean(draft?.needs_confirmation) ||
       unresolvedControl ||
+      unresolvedStateQuery ||
       resolvedActions.some((action) => ["high", "sensitive"].includes(action.risk) || action.confirmation === "always"),
-    requiresClarification: unresolvedControl,
+    requiresClarification: unresolvedControl || unresolvedStateQuery || intentFrame.decision?.mode === "ask_clarification" || intentFrame.ambiguity?.needsClarification,
     actions: resolvedActions,
     stateQuery,
     groupResolution,
@@ -391,6 +436,13 @@ function resolvePlannerStateQuery(input, draft, home, rejected) {
   return answer;
 }
 
+function hasStateQueryTarget(draft) {
+  const query = draft?.query;
+  if (!query || typeof query !== "object") return false;
+  const thingId = query.device_id || query.thingId;
+  return typeof thingId === "string" && thingId.trim().length > 0;
+}
+
 function resolveResidualGroupActions(input, home) {
   if (!(/还有|另一个|剩下/.test(input) && /没关|还开着|未关闭/.test(input))) return [];
   const graph = getHcmControlGraph(home);
@@ -541,6 +593,47 @@ function maybePreferenceFeedbackPlan(input, draft) {
   };
 }
 
+function maybeCorrectionFeedbackPlan(input, draft) {
+  if (!looksLikeCorrectionFeedback(input, draft)) return null;
+  const intentType = INTENT_TYPES.CORRECTION;
+  return {
+    id: crypto.randomUUID(),
+    kind: "hcm_correction_feedback",
+    input,
+    path: "hcm-real",
+    intent: typeof draft?.intent === "string" && draft.intent.trim() ? draft.intent.trim() : "记录纠错反馈",
+    intentType,
+    confidence: clampConfidence(draft?.confidence ?? 0.82),
+    summary: "收到，我会把这条作为纠错反馈记录下来；这次不会操作设备，也不会自动改设备映射。",
+    needsConfirmation: false,
+    requiresClarification: false,
+    actions: [],
+    stateQuery: null,
+    groupResolution: { mode: "single", groups: [], unresolved: [], blocked: false },
+    resolution: createIntentResolution({
+      input,
+      draft: { ...draft, intent_type: intentType, intent: "记录纠错反馈", confidence: draft?.confidence ?? 0.82 },
+      intentType,
+      stateQuery: null,
+      actions: [],
+      rejected: [],
+    }),
+    correction: {
+      source: "user_feedback",
+      input,
+      autoApply: false,
+    },
+    rejected: [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function looksLikeCorrectionFeedback(input, draft) {
+  const text = normalizeText(input);
+  if (normalizeIntentType(draft?.intent_type, [], null) === INTENT_TYPES.CORRECTION) return true;
+  return /(说错|搞错|错了|不对|不是这个|不是.*是|应该是|我看.*只有|其实.*是)/.test(text);
+}
+
 function looksLikePreferenceFeedback(input, draft) {
   const text = normalizeText(input);
   if (normalizeIntentType(draft?.intent_type, [], null) === "preference") return true;
@@ -627,6 +720,16 @@ function preferredRoomForLightPolicy(input, actions, home) {
   const actionRoomIds = Array.from(new Set(actions.map((action) => action.logicalRoomId).filter(Boolean)));
   if (actionRoomIds.length === 1) return actionRoomIds[0];
   return null;
+}
+
+function summarizeStateClarification(input, home) {
+  const roomIds = findExplicitRoomIds(input, home);
+  const roomName = roomIds.length === 1 ? home.spaces?.find((space) => space.id === roomIds[0])?.name ?? roomIds[0] : "";
+  if (/传感器/.test(normalizeText(input)) && roomName) {
+    return `${roomName}有多个可能的传感器目标。你想查人在/人体传感器、门窗传感器，还是其它传感器？`;
+  }
+  if (roomName) return `${roomName}里有多个可能目标，我需要你再说具体一点。`;
+  return "这个状态查询目标还不够明确，我需要你补充房间或设备名称。";
 }
 
 function sortedRoomLightAssets(home, roomId) {

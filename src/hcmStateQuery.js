@@ -25,7 +25,7 @@ const TYPE_PATTERNS = [
   ["switch_panel", /开关|灯|照明/],
 ];
 
-export function answerHcmStateQuery(input, home) {
+export function answerHcmStateQuery(input, home, reason = "") {
   const text = normalize(input);
   if (!home?.things?.length || !looksLikeStateQuery(text)) return null;
 
@@ -39,7 +39,46 @@ export function answerHcmStateQuery(input, home) {
     thingId: match.id,
     thingName: match.name,
     roomId: match.spaceId,
+    reason,
     summary: formatThingState(match, roomName),
+  };
+}
+
+export function answerHcmOccupancyStateQuery(input, home, reason = "") {
+  const text = normalize(input);
+  if (!home?.things?.length || !looksLikeOccupancyQuery(text)) return null;
+  const roomIds = requestedRooms(text, home.spaces ?? []);
+  if (roomIds.length !== 1) return null;
+  const roomId = roomIds[0];
+  const roomName = home.spaces?.find((space) => space.id === roomId)?.name ?? roomId;
+  const candidates = home.things
+    .filter((thing) => thing.spaceId === roomId && ["presence_sensor", "motion_sensor"].includes(thing.type))
+    .sort((first, second) => occupancySensorRank(first, text) - occupancySensorRank(second, text));
+  if (candidates.length === 0) {
+    return {
+      path: "hcm-occupancy-state",
+      mode: "occupancy_state",
+      thingId: null,
+      thingName: `${roomName}人在状态`,
+      roomId,
+      available: false,
+      state: "unknown",
+      reason,
+      summary: `${roomName}没有可用的人在/人体传感器状态。`,
+    };
+  }
+  const match = candidates[0];
+  const occupancy = occupancyValue(match);
+  return {
+    path: "hcm-occupancy-state",
+    mode: "occupancy_state",
+    thingId: match.id,
+    thingName: match.name,
+    roomId: match.spaceId,
+    available: occupancy !== "unknown",
+    state: occupancy,
+    reason,
+    summary: `${roomName}${occupancy === true ? "有人" : occupancy === false ? "无人" : "人在状态未知"}。数据来自${match.name}。`,
   };
 }
 
@@ -130,7 +169,31 @@ function channelLabel(channel) {
 export function looksLikeStateQuery(text) {
   if (!text) return false;
   if (/打开|开启|启动|关闭|关掉|调到|设置|播放|停止/.test(text)) return false;
-  return /状态|目前|现在|当前|有没有|是否|在不在|开着|关着|几度|温度|亮度|电量|光照/.test(text);
+  return /状态|目前|现在|当前|有没有|是否|在不在|有人|无人|人在|人不|开着|关着|几度|温度|亮度|电量|光照/.test(text);
+}
+
+function looksLikeOccupancyQuery(text) {
+  return /有人|无人|人在|人不|人体|存在|在不在/.test(text) && !/门|门窗|大门|前门/.test(text);
+}
+
+function occupancySensorRank(thing, text) {
+  if (thing.type === "presence_sensor") return 0;
+  if (/人体|移动/.test(text) && thing.type === "motion_sensor") return 0;
+  return 1;
+}
+
+function occupancyValue(thing) {
+  if (thing.type === "presence_sensor") {
+    const occupancy = findCapability(thing, /有人无人|occupancy|存在.*状态/);
+    if (occupancy?.state === true || occupancy?.state === false) return occupancy.state;
+  }
+  if (thing.type === "motion_sensor") {
+    const motion = findCapability(thing, /检测到移动|motion/);
+    if (motion?.state === true || motion?.state === false) return motion.state;
+    const noMotion = findCapability(thing, /无移动|no_motion/);
+    if (!isUnknown(noMotion?.state)) return false;
+  }
+  return "unknown";
 }
 
 function scoreThings(text, home) {
@@ -204,11 +267,14 @@ function formatThingState(thing, roomName) {
 
 function formatPresenceState(thing, roomName) {
   const occupancy = findCapability(thing, /有人无人|occupancy|存在.*状态/);
-  const duration = findCapability(thing, /有人持续|无人持续|duration/);
+  const hasDuration = findCapability(thing, /有人持续|has_someone|has_someone_duration/);
+  const noDuration = findCapability(thing, /无人持续|no_one|no_one_duration/);
+  const fallbackDuration = findCapability(thing, /duration/);
   const illuminance = findCapability(thing, /光照|illumination/);
   const battery = findCapability(thing, /电池|电量|battery/);
   const parts = [];
   if (occupancy) parts.push(formatBooleanPresence(occupancy.state));
+  const duration = occupancy?.state === true ? hasDuration : occupancy?.state === false ? noDuration : fallbackDuration;
   if (duration && !isUnknown(duration.state)) parts.push(`${shortCapabilityName(duration.name)} ${formatStateValue(duration.state)}`);
   if (illuminance && !isUnknown(illuminance.state)) parts.push(`光照 ${formatStateValue(illuminance.state)}`);
   if (battery && !isUnknown(battery.state)) parts.push(`电量 ${formatStateValue(battery.state)}%`);

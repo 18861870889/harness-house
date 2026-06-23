@@ -159,6 +159,16 @@ describe("hcm planner compiler", () => {
     expect(devices.map((device) => device.name)).toEqual(["书房射灯", "书房吊灯"]);
   });
 
+  it("narrows brightness follow-ups to the recent target room instead of all learned rooms", () => {
+    const devices = compileHcmForPlanner(createStudyPlannerHome(), {
+      input: "不够亮啊",
+      focusTargetIds: ["asset_study_书房射灯"],
+    });
+
+    expect(devices.map((device) => device.name)).toEqual(["书房射灯", "书房吊灯"]);
+    expect(devices.map((device) => device.name)).not.toContain("客厅吊灯");
+  });
+
   it("resolves a logical light back to its physical switch channel", () => {
     const plan = normalizeHcmPlannerDraft(
       "打开客厅灯",
@@ -286,6 +296,25 @@ describe("hcm planner compiler", () => {
     expect(plan.intentType).toBe("preference");
     expect(plan.actions).toEqual([]);
     expect(plan.summary).toContain("这次不会操作设备");
+  });
+
+  it("treats user corrections as feedback without changing mappings or executing devices", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "你说错了吧 我看厨房只有灯带",
+      {
+        intent_type: "state_query",
+        intent: "确认厨房只有灯带",
+        confidence: 0.9,
+        summary: "用户指出厨房只有灯带",
+        actions: [],
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("hcm_correction_feedback");
+    expect(plan.intentType).toBe("correction");
+    expect(plan.actions).toEqual([]);
+    expect(plan.summary).toContain("不会自动改设备映射");
   });
 
   it("uses the lighting preference order for ambiguous room light turn-on", () => {

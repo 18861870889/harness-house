@@ -90,7 +90,7 @@ function recoveryForIssues(issues, plan) {
 }
 
 function summarizeReview(status, issues) {
-  if (issues.length === 0) return "决策复核通过，未触碰真实设备。";
+  if (issues.length === 0) return "决策复核通过；复核阶段未触碰设备。";
   return `${status}：${issues.map((item) => item.message).join("；")}`;
 }
 

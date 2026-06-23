@@ -927,7 +927,7 @@ async function runHcmCommandPipeline(payload) {
       results: [],
     };
 
-    if (["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback"].includes(plan.kind)) {
+    if (["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback", "hcm_correction_feedback"].includes(plan.kind)) {
       execution.status = "answered";
     } else if (decisionReview.blocksExecution && decisionReview.status === "needs_clarification") {
       execution.status = "needs_clarification";

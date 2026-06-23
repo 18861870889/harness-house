@@ -69,4 +69,26 @@ describe("intent explainer", () => {
     expect(explanation.summary).toContain("读取结果：玄关的入户传感器");
     expect(explanation.summary).toContain("只读状态查询，不执行设备动作");
   });
+
+  it("explains correction feedback without implying a mapping change", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "你说错了吧 我看厨房只有灯带",
+      {
+        intent_type: "state_query",
+        intent: "确认厨房只有灯带",
+        confidence: 0.9,
+        actions: [],
+      },
+      createHarnessScenarioHome(),
+    );
+    const explanation = explainIntentResult({
+      input: "你说错了吧 我看厨房只有灯带",
+      plan,
+      execution: { status: "answered", dryRun: false, accepted: [], rejected: [] },
+    });
+
+    expect(explanation.title).toBe("纠错反馈");
+    expect(explanation.userMessage).toContain("不会自动改设备映射");
+    expect(explanation.summary).toContain("不执行设备动作");
+  });
 });

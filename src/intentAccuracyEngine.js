@@ -1,4 +1,4 @@
-const AMBIGUOUS_LOCATION_PATTERN = /这边|这里|附近|当前|有点热|太热|有点冷|太冷|有点闷|太亮|太暗|关一下|打开一下|调一下/;
+const AMBIGUOUS_LOCATION_PATTERN = /这边|这里|附近|当前|有点热|太热|有点冷|太冷|有点闷|太亮|太暗|有点暗|不够亮|还是暗|亮一点|再亮点|关一下|打开一下|调一下/;
 const CONTROL_VERB_PATTERN = /打开|关闭|关掉|停止|暂停|启动|调到|设置|准备|我要|播放|看电影|晾衣|清扫/;
 const ROOM_CONFIDENCE_THRESHOLD = 0.6;
 

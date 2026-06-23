@@ -157,7 +157,9 @@
 必须覆盖：
 
 - `餐厅射灯开着吗` 后输入 `关一下`，目标仍为餐厅射灯，不能被当前选中房间替换。
+- `厨房灯开一下` 后输入 `不够亮啊`，必须优先继承厨房/上一轮目标所在房间，不能被历史书房偏好带跑。
 - 会话目标和模型动作目标不一致时产生 `conversation_target_mismatch/critical`，不执行。
+- `厨房有人不` 必须由厨房人在/presence sensor 回答，不能只返回空计划。
 - `客厅有几个射灯` 返回 HCM 聚合数量和设备名，不回答某一盏灯的状态。
 - `过道射灯关一下` 展开为射灯1和射灯2；任一主执行器未确认时整个集合不执行。
 - `过道射灯还有一个没关` 只选择仍处于 `on` 的成员。
@@ -182,6 +184,7 @@
 - `建议默认开射灯，如果我觉得还是暗了就再开一下吊灯` 进入 preference/shadow learning，不执行真实设备。
 - `书房灯开一下` 这类模糊开灯优先选择 `射灯`，除非用户明确点名其他灯。
 - `还是有点暗` 在同房间寻找仍关闭的其他灯并打开；不能重复打开已经开启的同一回路。
+- 短体感反馈如 `不够亮啊`、`还是有点暗` 不能加载无关历史成功命令作为强 planner hint。
 - 面向用户的回复使用自然语言短句，详细服务调用保留在 explanation/audit。
 
 核心测试：
@@ -338,6 +341,7 @@ npm run build
 
 - LLM 返回 `intent_frame` 但没有顶层 `actions` 时，系统仍能从 semantic decision actions 中归一化 HCM 动作。
 - LLM 返回高歧义 frame 时，系统必须进入 clarification/review，而不是靠默认设备猜测。
+- 用户纠错如 `你说错了吧` 必须作为 correction feedback，不执行设备、不自动改映射。
 - Grounding resolver 只能生成 HCM 目标，不能生成 provider service。
 - Decision Review 必须阻断 provider simulator 拒绝的计划。
 - Learning context 必须进入 prompt context，但不能自动开放规则、写 overlay 或控制真实设备。

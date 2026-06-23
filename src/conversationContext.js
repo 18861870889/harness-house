@@ -50,7 +50,16 @@ export function createConversationContextStore({ now = () => Date.now(), ttlMs =
 export function isReferentialControlInput(input) {
   const text = normalize(input);
   return /^(把)?(它|这个|那个)?(也)?(打开|开|关闭|关掉|关|停|停止|调一下|开一下|关一下)$/.test(text)
-    || /^(再|也)(打开|开|关闭|关掉|关|停|停止)/.test(text);
+    || /^(再|也)(打开|开|关闭|关掉|关|停|停止)/.test(text)
+    || isComfortFollowUpInput(input);
+}
+
+export function isComfortFollowUpInput(input) {
+  const text = normalize(input);
+  return /^(还是)?(有点|太|不够|再)?(暗|亮|热|冷|闷)(啊|了|一点|点)?$/.test(text)
+    || /^(还是)?(有点)?不够亮(啊|了)?$/.test(text)
+    || /^(再)?亮一点$/.test(text)
+    || /^暗一点$/.test(text);
 }
 
 function targetsFromPlan(plan) {

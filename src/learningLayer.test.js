@@ -214,4 +214,13 @@ describe("learning layer", () => {
     ]);
     expect(context.hints).toEqual([]);
   });
+
+  it("does not add unrelated learned command hints to short comfort follow-ups", () => {
+    const memory = recordLearningObservation(createLearningMemory(), auditEntry("书房灯开一下"), {
+      updatedAt: "2026-06-14T00:00:00.000Z",
+    });
+    const context = compileHouseholdLearningContext(memory, { input: "不够亮啊" });
+
+    expect(context.hints).toEqual([]);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConversationContextStore, isReferentialControlInput } from "./conversationContext.js";
+import { createConversationContextStore, isComfortFollowUpInput, isReferentialControlInput } from "./conversationContext.js";
 
 describe("conversation context", () => {
   it("keeps the last resolved logical target for short follow-up commands", () => {
@@ -52,5 +52,11 @@ describe("conversation context", () => {
 
     expect(store.get("session-1").focusedTargets).toEqual([]);
     expect(store.get("session-1").focusedRooms).toEqual([{ id: "study", name: "书房" }]);
+  });
+
+  it("treats brightness discomfort as a context-dependent follow-up", () => {
+    expect(isComfortFollowUpInput("不够亮啊")).toBe(true);
+    expect(isComfortFollowUpInput("还是有点暗")).toBe(true);
+    expect(isReferentialControlInput("不够亮啊")).toBe(true);
   });
 });

@@ -150,7 +150,9 @@ export function compileHouseholdLearningContext(memory, { input = "" } = {}) {
   const relevant = activeCandidates
     .filter((candidate) => candidateMatchesInput(candidate, input))
     .sort((first, second) => second.confidence - first.confidence || second.count - first.count);
-  const fallback = activeCandidates
+  const fallback = isContextSensitiveInput(input)
+    ? []
+    : activeCandidates
     .filter((candidate) => !relevant.includes(candidate))
     .sort((first, second) => second.confidence - first.confidence || second.count - first.count);
 
@@ -271,6 +273,14 @@ function candidateMatchesInput(candidate, input) {
   if (!key) return false;
   if (candidate.commandKey === key) return true;
   return candidate.examples?.some((example) => normalizeCommandKey(example) === key) || normalizeCommandKey(candidate.input).includes(key);
+}
+
+function isContextSensitiveInput(input) {
+  const text = normalizeCommandKey(input);
+  return /^(还是)?(有点|太|不够|再)?(暗|亮|热|冷|闷)(啊|了|一点|点)?$/.test(text)
+    || /^(还是)?(有点)?不够亮(啊|了)?$/.test(text)
+    || /^(再)?亮一点$/.test(text)
+    || /^(开|关|打开|关闭|关掉|停|停止)(一下)?$/.test(text);
 }
 
 function toPlannerHint(candidate) {

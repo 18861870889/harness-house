@@ -27,6 +27,8 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
       ? "家庭知识查询"
       : plan?.intentType === "preference"
         ? "偏好反馈"
+      : plan?.intentType === "correction"
+        ? "纠错反馈"
       : plan?.intentType === "state_query"
         ? "状态读取解释"
         : "执行计划解释",
@@ -56,6 +58,7 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
 
 function userMessage({ input, plan, execution, targetNames }) {
   if (plan?.kind === "hcm_preference_feedback") return plan.summary;
+  if (plan?.kind === "hcm_correction_feedback") return plan.summary;
   if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_state_query") return plan?.stateQuery?.summary || plan.summary;
   if (execution?.status === "executed") {
     const action = execution.accepted?.[0];
@@ -91,6 +94,7 @@ function targetNamesFromPlan(plan) {
 function safetyText(plan, execution) {
   if (plan?.kind === "hcm_state_query") return "只读状态查询，不执行设备动作。";
   if (plan?.kind === "hcm_inventory_query") return "只读家庭知识查询，不执行设备动作。";
+  if (plan?.kind === "hcm_correction_feedback") return "纠错反馈只记录，不执行设备动作，也不自动修改映射。";
   if (execution?.status === "needs_clarification") return "目标或控制通道不完整，未执行任何设备动作。";
   if (plan?.needsConfirmation) return "需要用户确认后才能执行。";
   if (execution?.status === "dry_run") return "dry-run 预览，不会控制真实设备。";

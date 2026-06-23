@@ -4,6 +4,7 @@ export const INTENT_TYPES = {
   INVENTORY_QUERY: "inventory_query",
   SCENE: "scene",
   PREFERENCE: "preference",
+  CORRECTION: "correction",
   UNKNOWN: "unknown",
 };
 
