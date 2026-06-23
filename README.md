@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.19`
+当前进度：`v0.23`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -20,11 +20,14 @@ Provider Raw Graph
   -> Spatial Home Model (Room / Placement / Naming)
   -> Conversation Target/Room + Group / Knowledge Resolver
   -> LLM Planner
+  -> Intent Frame (Goal / Grounding / Ambiguity / Decision)
+  -> Semantic Grounding Resolver
   -> Preference / Comfort Resolver
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
   -> Provider Adapter Compile / Simulate
+  -> Decision Review
   -> Authorized Provider Execute
   -> Provider State Readback
   -> Audit / Learning / Agents
@@ -59,6 +62,15 @@ Provider Raw Graph
 - 当前可配置 DeepSeek / OpenAI-compatible API。
 - 所有真实 HCM 指令先经过 LLM 意图解析，再由本地 HCM normalize / safety / executor 校验。
 - 状态查询也经过 LLM 选目标，但状态内容由本地 HCM 读取，避免模型编造。
+- Planner prompt 已升级为 Prompt Context Pack v2：按房间、能力、占用、会话焦点、家庭语义和学习上下文组织，而不是只给模型一张扁平设备表。
+
+### Intent Frame & Semantic Grounding
+
+- LLM 输出先规整为 `Intent Frame`，包含目标、期望结果、候选 grounding、不确定性、决策模式和 HCM-level actions。
+- 旧版 `actions` JSON 仍兼容；新版 `intent_frame` 可让模型先表达“它理解了什么”，再进入 HCM normalize。
+- `Semantic Grounding Resolver` 支持把中文目标名，例如 `书房射灯`，落地到 HCM logical asset ID。
+- 多候选目标不会静默猜测；会保留 ambiguity 并进入 clarification/review。
+- Command audit 会记录 intent frame、grounding 状态和候选数量，便于定位“模型理解错”还是“设备映射错”。
 
 ### Home Assistant Integration
 
@@ -117,6 +129,7 @@ Provider Raw Graph
 - Safety Gate 拦截未知设备、未知能力、只读 sensor、高风险能力。
 - HA Service Simulator 在真实执行前模拟 service call。
 - 支持根据 `media_player.supported_features` 选择 `media_pause` / `media_stop` / `turn_off`。
+- `Decision Review` 在模拟后复核 planner、safety、policy 和 provider simulator 的一致性；阻断 unresolved、policy rejected 和 simulation rejected 的计划。
 - dry-run 解释会显示“模拟校验”，明确是否触碰真实设备。
 - 自动化测试不调用真实 `/api/services/*`。
 
@@ -125,6 +138,7 @@ Provider Raw Graph
 - Command audit：记录每条真实 HCM 命令的阶段、耗时、计划、执行和解释摘要。
 - Replay：历史命令可用 dry-run 回放。
 - Learning Layer：从 `no_action` / `rejected` / `partial_failure` 生成 shadow correction candidates。
+- Household Learning Context：把 shadow 偏好、成功模式和失败模式编译成 planner guidance，但不自动生成动作、不绕过 HCM grounding。
 - Multi-Agent Runtime `v0.9`：
   - `Context Agent`：从 presence / motion / door sensor 推断房间占用置信度。
   - `Learning Agent`：整理 shadow learning candidates，不自动应用。
@@ -291,13 +305,18 @@ Context Snapshot
   -> Policy Overlay
   -> Context Agent Snapshot
   -> Personal Semantics
+  -> Household Learning Context
   -> Prompt Compile
+  -> Prompt Context Pack v2
   -> LLM Planner
+  -> Intent Frame Normalize
+  -> Semantic Grounding Resolver
   -> Plan Normalize
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
   -> Provider Adapter Compile / Simulate
+  -> Decision Review
   -> Authorized Provider Execute
   -> Audit / Learning / Agents
 ```
@@ -330,6 +349,10 @@ Context Snapshot
 - `v0.18.2` Lighting Preference Loop
 - `v0.18B` Spatial Home Model Editor
 - `v0.19` Assisted Mapping And 2D/3D Sync
+- `v0.20` Intent Frame & Prompt Context Pack v2
+- `v0.21` Semantic Grounding Resolver
+- `v0.22` Decision Review & Recovery
+- `v0.23` Household Learning Context
 
 后续重点：
 

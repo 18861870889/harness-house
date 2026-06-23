@@ -1,4 +1,5 @@
 export const LEARNING_MEMORY_VERSION = "0.1";
+export const HOUSEHOLD_LEARNING_CONTEXT_VERSION = "0.23";
 
 export function createLearningMemory({
   updatedAt = new Date().toISOString(),
@@ -142,6 +143,47 @@ export function summarizeLearningMemory(memory) {
   };
 }
 
+export function compileHouseholdLearningContext(memory, { input = "" } = {}) {
+  const normalized = normalizeMemory(memory);
+  const activeCandidates = normalized.candidates.filter((candidate) => candidate.status !== "ignored");
+  const correctionCandidates = deriveCorrectionCandidates(normalized.observations);
+  const relevant = activeCandidates
+    .filter((candidate) => candidateMatchesInput(candidate, input))
+    .sort((first, second) => second.confidence - first.confidence || second.count - first.count);
+  const fallback = activeCandidates
+    .filter((candidate) => !relevant.includes(candidate))
+    .sort((first, second) => second.confidence - first.confidence || second.count - first.count);
+
+  return {
+    version: HOUSEHOLD_LEARNING_CONTEXT_VERSION,
+    mode: normalized.mode,
+    input,
+    hints: [...relevant, ...fallback].slice(0, 6).map(toPlannerHint),
+    preferenceHints: activeCandidates
+      .filter((candidate) => candidate.type === "preference_policy")
+      .slice(0, 6)
+      .map((candidate) => ({
+        id: candidate.id,
+        input: candidate.input,
+        confidence: candidate.confidence,
+        preference: candidate.preference,
+        safety: candidate.safety,
+        instruction: "Use as a soft household preference; never bypass HCM grounding or safety gates.",
+      })),
+    correctionHints: correctionCandidates.slice(0, 5).map((candidate) => ({
+      id: candidate.id,
+      input: candidate.input,
+      confidence: candidate.confidence,
+      reason: candidate.reason,
+      instruction: "This is a previous failure pattern; prefer clarification or stronger grounding if similar.",
+    })),
+    safety: {
+      autoApply: false,
+      reason: "Learning context is planner guidance only. It must not create executable actions without HCM grounding.",
+    },
+  };
+}
+
 export function deriveCorrectionCandidates(observations = []) {
   const groups = new Map();
   for (const observation of observations) {
@@ -222,6 +264,28 @@ function normalizeCommandKey(input) {
     .replace(/\s+/g, "")
     .replace(/一下|帮我|请|把/g, "")
     .toLowerCase();
+}
+
+function candidateMatchesInput(candidate, input) {
+  const key = normalizeCommandKey(input);
+  if (!key) return false;
+  if (candidate.commandKey === key) return true;
+  return candidate.examples?.some((example) => normalizeCommandKey(example) === key) || normalizeCommandKey(candidate.input).includes(key);
+}
+
+function toPlannerHint(candidate) {
+  return {
+    id: candidate.id,
+    type: candidate.type,
+    input: candidate.input,
+    confidence: candidate.confidence,
+    count: candidate.count,
+    actions: candidate.actions ?? [],
+    preference: candidate.preference,
+    examples: candidate.examples ?? [],
+    safety: candidate.safety,
+    instruction: "Planner hint only; Harness must still ground targets, compile actions, simulate, and enforce policy.",
+  };
 }
 
 function inferCandidateType(input) {

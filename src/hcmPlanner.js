@@ -4,6 +4,8 @@ import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledge
 import { isReferentialControlInput } from "./conversationContext.js";
 import { createIntentResolution, normalizeIntentType } from "./intentResolution.js";
 import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
+import { normalizeIntentFrame } from "./intentFrame.js";
+import { normalizeSemanticPlannerActions, resolveSemanticGrounding } from "./semanticGroundingResolver.js";
 
 const CONTROL_REQUEST_PATTERN = /打开|开启|启动|关闭|关掉|停止|暂停|调到|设置|播放|清扫|没关|忘了关|还开着/;
 
@@ -53,13 +55,30 @@ export function compileHcmForPlanner(
 }
 
 export function normalizeHcmPlannerDraft(input, draft, home) {
-  const preferencePlan = maybePreferenceFeedbackPlan(input, draft);
-  if (preferencePlan) return preferencePlan;
+  const intentFrame = normalizeIntentFrame(input, draft);
+  const semanticActions = normalizeSemanticPlannerActions(intentFrame.actions, { input, home });
+  const normalizedDraft = {
+    ...draft,
+    intent_type: intentFrame.intentType,
+    query: intentFrame.query ?? draft?.query,
+  };
+  const preferencePlan = maybePreferenceFeedbackPlan(input, normalizedDraft);
+  if (preferencePlan) {
+    return attachSemanticDiagnostics(preferencePlan, {
+      input,
+      intentFrame,
+      draftActions: intentFrame.actions,
+      normalizedActions: [],
+      stateQuery: null,
+      rejected: [],
+      home,
+    });
+  }
 
-  const actions = Array.isArray(draft?.actions) ? draft.actions : [];
+  const actions = semanticActions.actions;
   let normalizedActions = [];
-  const rejected = [];
-  const requestedIntentType = normalizeIntentType(draft?.intent_type, [], null);
+  const rejected = [...semanticActions.rejected];
+  const requestedIntentType = normalizeIntentType(intentFrame.intentType, [], null);
   const controlRequested = CONTROL_REQUEST_PATTERN.test(input) || ["device_control", "scene"].includes(requestedIntentType);
 
   for (const action of actions) {
@@ -78,16 +97,16 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const resolvedActions = groupResolution.blocked ? [] : groupResolution.actions;
   if (groupResolution.blocked) rejected.push(...groupResolution.unresolved.map((item) => `${item.name} 没有已确认的可执行控制通道`));
   const inventoryQuery = resolvedActions.length === 0 && !controlRequested && looksLikeInventoryQuery(input)
-    ? answerHcmInventoryQuery(input, home, draft?.query?.reason)
+    ? answerHcmInventoryQuery(input, home, normalizedDraft?.query?.reason)
     : null;
   const roomLightStateQuery =
     resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query"
-      ? answerHcmRoomLightStateQuery(input, home, draft?.query?.reason)
+      ? answerHcmRoomLightStateQuery(input, home, normalizedDraft?.query?.reason)
       : null;
   const stateQuery = roomLightStateQuery
     ? roomLightStateQuery
     : resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
-      ? resolvePlannerStateQuery(input, draft, home, rejected)
+      ? resolvePlannerStateQuery(input, normalizedDraft, home, rejected)
       : inventoryQuery;
   const intentType = inventoryQuery
     ? "inventory_query"
@@ -97,14 +116,14 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const unresolvedControl = controlRequested && resolvedActions.length === 0 && !groupResolution.satisfied;
   const resolution = createIntentResolution({
     input,
-    draft,
+    draft: normalizedDraft,
     intentType,
     stateQuery,
     actions: resolvedActions,
     rejected,
   });
 
-  return {
+  const plan = {
     id: crypto.randomUUID(),
     kind: inventoryQuery
       ? "hcm_inventory_query"
@@ -117,9 +136,9 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
             : "empty",
     input,
     path: "hcm-real",
-    intent: typeof draft?.intent === "string" ? draft.intent : intentType,
+    intent: typeof draft?.intent === "string" ? draft.intent : intentFrame.intent || intentType,
     intentType,
-    confidence: clampConfidence(draft?.confidence),
+    confidence: clampConfidence(intentFrame.confidence),
     summary:
       stateQuery
         ? stateQuery.summary
@@ -144,12 +163,23 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     rejected,
     createdAt: new Date().toISOString(),
   };
+
+  return attachSemanticDiagnostics(plan, {
+    input,
+    intentFrame,
+    draftActions: intentFrame.actions,
+    normalizedActions: resolvedActions,
+    stateQuery,
+    rejected,
+    home,
+  });
 }
 
 export function buildHcmPlannerSystemPrompt() {
   return [
     "You are Harness House HCM Planner.",
     "Convert the user's Chinese smart-home instruction into strict JSON only.",
+    "Think at the semantic home layer first. Harness will compile HCM actions into provider calls later.",
     "Use only the provided HCM devices and capability ids.",
     "Never invent devices, rooms, or capabilities.",
     "Every user command must be interpreted by you first, including read-only state questions.",
@@ -170,9 +200,25 @@ export function buildHcmPlannerSystemPrompt() {
     "Read-only capabilities may only be used to answer state questions; never put read_state capabilities in actions.",
     "For on/off controls, use boolean true or false.",
     "For temperature, brightness, fan percentage, or cover position, use a number.",
-    "Return exactly this JSON shape:",
-    '{"intent_type":"state_query|inventory_query|device_control|scene|preference|unknown","intent":"string","confidence":0.0,"summary":"中文短句","needs_confirmation":false,"query":{"mode":"state|count|list","device_id":"thing id or empty","reason":"中文短句"},"actions":[{"device_id":"thing id","capability":"capability id","value":true,"reason":"中文短句"}]}',
+    "Return exactly this JSON shape. Keep actions as HCM-level actions, not provider service calls:",
+    '{"intent_frame":{"intent_type":"state_query|inventory_query|device_control|scene|preference|unknown","intent":"string","confidence":0.0,"goal":{"domain":"lighting|climate|media|cover|laundry|general","desired_outcome":"string","space_refs":["room name or id"],"target_refs":["device name or id"],"constraints":[]},"grounding":{"required_facts":["string"],"candidate_targets":[{"target_ref":"thing id","name":"中文名","confidence":0.0,"reason":"中文短句"}]},"ambiguity":{"level":"low|medium|high","needs_clarification":false,"ambiguous_terms":[],"alternatives":[]},"decision":{"mode":"execute|answer|remember_preference|ask_clarification|no_action","reason":"中文短句"}},"intent_type":"state_query|inventory_query|device_control|scene|preference|unknown","intent":"string","confidence":0.0,"summary":"中文短句","needs_confirmation":false,"query":{"mode":"state|count|list","device_id":"thing id or empty","reason":"中文短句"},"actions":[{"device_id":"thing id","capability":"capability id","value":true,"reason":"中文短句"}]}',
   ].join("\n");
+}
+
+function attachSemanticDiagnostics(plan, { input, intentFrame, draftActions, normalizedActions, stateQuery, rejected, home }) {
+  return {
+    ...plan,
+    intentFrame,
+    grounding: resolveSemanticGrounding({
+      input,
+      intentFrame,
+      draftActions,
+      normalizedActions,
+      stateQuery,
+      rejected,
+      home,
+    }),
+  };
 }
 
 function compileThing(thing, includeCapability = () => true) {

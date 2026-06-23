@@ -31,8 +31,10 @@ import {
   compileHcmForPlanner,
   normalizeHcmPlannerDraft,
 } from "./src/hcmPlanner.js";
+import { buildPromptContextPackV2, summarizePromptContextPack } from "./src/intentFrame.js";
 import { explainIntentResult } from "./src/intentExplainer.js";
 import { applyIntentAccuracyGate, evaluateIntentAccuracy } from "./src/intentAccuracyEngine.js";
+import { reviewDecisionBeforeExecution } from "./src/decisionReview.js";
 import {
   applyPersonalSemanticsToThingAliases,
   compilePersonalSemanticsForPlanner,
@@ -41,6 +43,7 @@ import { createCommandTrace, finishCommandTrace, runCommandStage } from "./src/c
 import { createConversationContextStore } from "./src/conversationContext.js";
 import {
   createLearningMemory,
+  compileHouseholdLearningContext,
   deleteLearningCandidate,
   recordLearningObservation,
   summarizeLearningMemory,
@@ -749,6 +752,18 @@ async function runHcmCommandPipeline(payload) {
         }),
       },
     );
+    const learningContext = await runCommandStage(
+      trace,
+      "learning_context",
+      async () => compileHouseholdLearningContext(readLearningMemory(), { input: payload.input, home }),
+      {
+        summarize: (context) => ({
+          hints: context.hints.length,
+          preferences: context.preferenceHints.length,
+          corrections: context.correctionHints.length,
+        }),
+      },
+    );
     const plannerDevices = await runCommandStage(
       trace,
       "prompt_compile",
@@ -767,6 +782,23 @@ async function runHcmCommandPipeline(payload) {
         }),
       },
     );
+    const promptContextPack = await runCommandStage(
+      trace,
+      "prompt_context_pack_v2",
+      async () =>
+        buildPromptContextPackV2({
+          input: payload.input,
+          home,
+          devices: plannerDevices,
+          currentRoomId: payload.currentRoomId,
+          selectedRoomId: payload.selectedRoomId,
+          personalSemantics,
+          context: contextAgent,
+          conversation,
+          learningContext,
+        }),
+      { summarize: summarizePromptContextPack },
+    );
     if (plannerDevices.length === 0) {
       const error = new Error("No auto-executable HCM capabilities are available.");
       error.statusCode = 409;
@@ -783,10 +815,19 @@ async function runHcmCommandPipeline(payload) {
           selectedRoomId: payload.selectedRoomId,
           devices: plannerDevices,
           personalSemantics,
+          learningContext,
+          contextPack: promptContextPack,
           context: contextAgent,
           conversation,
         }),
-      { summarize: (draft) => ({ intent: draft.intent, intentType: draft.intent_type, actionCount: draft.actions?.length ?? 0 }) },
+      {
+        summarize: (draft) => ({
+          intent: draft.intent,
+          intentType: draft.intent_type ?? draft.intent_frame?.intent_type,
+          frame: Boolean(draft.intent_frame),
+          actionCount: draft.actions?.length ?? draft.intent_frame?.decision?.actions?.length ?? 0,
+        }),
+      },
     );
     const normalizedPlan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
       summarize: (plan) => ({
@@ -857,17 +898,41 @@ async function runHcmCommandPipeline(payload) {
         }),
       },
     );
+    const decisionReview = await runCommandStage(
+      trace,
+      "decision_review",
+      async () =>
+        reviewDecisionBeforeExecution({
+          input: payload.input,
+          plan,
+          executionPlan,
+          policyPlan,
+          simulation: serviceSimulation,
+        }),
+      {
+        summarize: (review) => ({
+          status: review.status,
+          ok: review.ok,
+          issues: review.issues.map((issue) => issue.code),
+        }),
+      },
+    );
     const execution = {
       status: "planned",
       dryRun: Boolean(payload.dryRun),
       accepted: policyPlan.accepted.map((item) => formatAcceptedExecution(item, serviceSimulation)),
       rejected: [...policyPlan.rejected, ...serviceSimulation.rejected],
       simulation: serviceSimulation,
+      decisionReview,
       results: [],
     };
 
     if (["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback"].includes(plan.kind)) {
       execution.status = "answered";
+    } else if (decisionReview.blocksExecution && decisionReview.status === "needs_clarification") {
+      execution.status = "needs_clarification";
+    } else if (decisionReview.blocksExecution) {
+      execution.status = "rejected";
     } else if (plan.requiresClarification || (plan.needsConfirmation && plan.actions.length === 0)) {
       execution.status = "needs_clarification";
     } else if (plan.actions.length === 0) {
@@ -927,6 +992,8 @@ async function runHcmCommandPipeline(payload) {
       deviceCount: plannerDevices.length,
       capabilityCount: plannerDevices.reduce((sum, device) => sum + device.capabilities.length, 0),
       personalSemanticHintCount: personalSemantics.length,
+      learningHintCount: learningContext.hints.length,
+      promptContext: summarizePromptContextPack(promptContextPack),
     };
     const auditEntry = finishCommandTrace(trace, {
       status: execution.status,
@@ -1036,7 +1103,7 @@ async function callHcmPlannerModel(payload) {
     body: JSON.stringify({
       model: getModel(),
       temperature: 0,
-      max_tokens: 700,
+      max_tokens: 1200,
       response_format: { type: "json_object" },
       ...getProviderOptions(),
       messages: [
@@ -1050,8 +1117,10 @@ async function callHcmPlannerModel(payload) {
             input: payload.input,
             currentRoomId: payload.currentRoomId,
             selectedRoomId: payload.selectedRoomId,
+            context_pack_v2: payload.contextPack,
             devices: payload.devices,
             personal_semantics: payload.personalSemantics ?? [],
+            household_learning: payload.learningContext ?? null,
             context: compactPlannerContext(payload.context),
             conversation: compactConversationContext(payload.conversation),
           }),
@@ -1174,7 +1243,7 @@ function parseJsonContent(content) {
 
 function validatePlannerDraft(draft) {
   if (!draft || typeof draft !== "object") throw new Error("Planner draft must be an object");
-  if (!Array.isArray(draft.actions)) throw new Error("Planner draft actions must be an array");
+  if (!Array.isArray(draft.actions)) draft.actions = [];
   if (typeof draft.summary !== "string") draft.summary = "已生成真实大模型计划。";
   if (typeof draft.intent !== "string") draft.intent = "llm_control";
   if (typeof draft.confidence !== "number") draft.confidence = 0.6;

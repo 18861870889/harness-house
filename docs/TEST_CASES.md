@@ -211,11 +211,39 @@
 
 - `src/spatialHomeEditor.test.js`
 
-## 16. 自动化测试入口
+## 16. Intent Frame, Grounding, Review And Learning Context
+
+必须覆盖：
+
+- 新版 `intent_frame` 必须能归一化为稳定的家庭语义契约，包括 goal、grounding、ambiguity、decision。
+- 旧版 planner draft 仍必须兼容，不能因为新契约导致已有动作链路回退。
+- Prompt Context Pack v2 必须按房间组织 affordances，并包含 occupancy、conversation、personal semantics 和 learning guidance。
+- 模型输出 `target: "书房射灯"` 这类中文语义目标时，本地 resolver 必须落地到 HCM logical asset。
+- 模型输出 `target: "射灯"` 且存在多个候选时，必须保留 ambiguity，不能静默选择。
+- Grounding 诊断必须进入 plan/audit，至少包含 status、candidate count、explicit room 和 unresolved reason。
+- Decision Review 必须在 provider simulation 之后、authorized execute 之前运行。
+- unresolved control、empty control plan、policy rejected、simulation rejected 都不能进入 provider execute。
+- read-only state/inventory/preference 计划不应因为没有 actions 被误拦。
+- Household Learning Context 只能作为 planner guidance，`autoApply` 必须保持 false。
+- 成功模式、偏好反馈、失败纠错都可以进入上下文，但都不能直接生成 executable actions。
+
+核心测试：
+
+- `src/intentFrame.test.js`
+- `src/semanticGroundingResolver.test.js`
+- `src/decisionReview.test.js`
+- `src/hcmPlanner.test.js`
+- `src/learningLayer.test.js`
+- `src/commandRuntime.test.js`
+
+## 17. 自动化测试入口
 
 核心场景 benchmark 位于：
 
 - `src/harnessScenario.fixture.js`
+- `src/intentFrame.test.js`
+- `src/semanticGroundingResolver.test.js`
+- `src/decisionReview.test.js`
 - `src/hcmIntentBenchmark.test.js`
 - `src/intentAccuracyEngine.test.js`
 - `src/hcmCapabilityCompression.test.js`
@@ -236,7 +264,7 @@ npm test
 npm run build
 ```
 
-## 17. v0.15-v0.18 验收与后续测试焦点
+## 18. v0.15-v0.23 验收与后续测试焦点
 
 ### v0.10 Real Home Pilot
 
@@ -305,3 +333,11 @@ npm run build
 - 2D 百分比坐标必须稳定投影为 3D scene 坐标，且不会修改 provider/HCM 原始设备对象。
 - 房间自定义名称必须同步到 3D room label 和设备显示名。
 - 2D/3D 同步只能影响可视化和本地空间模型，不能绕过 HCM、Intent Accuracy、Safety、Policy 或 Provider Adapter。
+
+### v0.20-v0.23 Semantic Planner Architecture
+
+- LLM 返回 `intent_frame` 但没有顶层 `actions` 时，系统仍能从 semantic decision actions 中归一化 HCM 动作。
+- LLM 返回高歧义 frame 时，系统必须进入 clarification/review，而不是靠默认设备猜测。
+- Grounding resolver 只能生成 HCM 目标，不能生成 provider service。
+- Decision Review 必须阻断 provider simulator 拒绝的计划。
+- Learning context 必须进入 prompt context，但不能自动开放规则、写 overlay 或控制真实设备。

@@ -13,6 +13,7 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
   if (services.length > 0) lines.push(`将调用：${services.join("；")}`);
   const simulation = simulationText(execution);
   if (simulation) lines.push(`模拟校验：${simulation}`);
+  if (execution?.decisionReview?.summary) lines.push(`决策复核：${execution.decisionReview.summary}`);
   if (plannerHints.length > 0) {
     lines.push(`家庭语义：${plannerHints.map((hint) => `${hint.phrase} -> ${hint.candidates[0]?.thingName}`).join("；")}`);
   }
@@ -68,6 +69,7 @@ function userMessage({ input, plan, execution, targetNames }) {
     return `这是预览：会操作 ${targetNames.join("、") || plan?.intent || input}，不会控制真实设备。`;
   }
   if (execution?.status === "rejected") {
+    if (execution.decisionReview?.recovery?.message) return `这次没有执行：${execution.decisionReview.recovery.message}。`;
     const reason = execution.rejected?.map((item) => item.message || item.code).filter(Boolean).join("；");
     return reason ? `这次没有执行：${reason}。` : "这次没有执行，安全门拒绝了计划。";
   }

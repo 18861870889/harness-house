@@ -166,6 +166,25 @@ function summarizePlan(plan) {
           capabilityStatus: plan.resolution.capabilityResolution?.status,
         }
       : null,
+    intentFrame: plan.intentFrame
+      ? {
+          version: plan.intentFrame.version,
+          source: plan.intentFrame.source,
+          intentType: plan.intentFrame.intentType,
+          domain: plan.intentFrame.goal?.domain,
+          outcome: plan.intentFrame.goal?.outcome,
+          decisionMode: plan.intentFrame.decision?.mode,
+          ambiguityLevel: plan.intentFrame.ambiguity?.level,
+        }
+      : null,
+    grounding: plan.grounding
+      ? {
+          version: plan.grounding.version,
+          status: plan.grounding.status,
+          candidateCount: plan.grounding.targetCandidates?.length ?? 0,
+          ambiguityLevel: plan.grounding.ambiguity?.level,
+        }
+      : null,
     rejected: plan.rejected ?? [],
   };
 }
@@ -192,6 +211,16 @@ function summarizeExecution(execution) {
           ok: execution.simulation.ok,
           rejectedCount: execution.simulation.rejected?.length ?? 0,
           assumedCount: execution.simulation.checks?.filter((check) => check.code === "assumed_supported").length ?? 0,
+        }
+      : null,
+    decisionReview: execution.decisionReview
+      ? {
+          version: execution.decisionReview.version,
+          status: execution.decisionReview.status,
+          ok: execution.decisionReview.ok,
+          issueCount: execution.decisionReview.issues?.length ?? 0,
+          recoveryMode: execution.decisionReview.recovery?.mode,
+          summary: execution.decisionReview.summary,
         }
       : null,
     results: (execution.results ?? []).map((result) => ({

@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.19`.
+Current engineering progress: `v0.23`.
 
 Completed major runtime capabilities:
 
@@ -37,6 +37,11 @@ Completed major runtime capabilities:
 - Provider state readback after execution; service acceptance alone is not final success.
 - Local Spatial Home Model Editor for floor-plan upload, room renaming, device placement, naming modes, and logical-asset vs physical-controller organization.
 - Assisted spatial mapping suggestions and local 2D -> 3D digital-twin projection.
+- Intent Frame contract for goal, grounding, ambiguity, decision mode, and HCM-level actions.
+- Prompt Context Pack v2 with room-oriented affordances, context, conversation, personal semantics, and learning guidance.
+- Semantic Grounding Resolver for converting model semantic targets into HCM logical assets while preserving ambiguity.
+- Decision Review stage after policy/provider simulation and before any authorized provider execution.
+- Household Learning Context that feeds shadow learning back into planner guidance without auto-applying rules.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -127,6 +132,49 @@ Status: implemented for local suggestions and digital-twin projection.
 - Existing v0.18B local storage is migrated into the v0.19 state shape.
 - Boundary: v0.19 does not write Home Assistant areas, does not write HCM Overlay mapping, and does not perform automatic floor-plan recognition.
 
+## v0.20 Intent Frame & Prompt Context Pack v2
+
+Status: implemented and covered by local tests.
+
+- Added `Intent Frame` normalization for both new `intent_frame` planner output and legacy `actions` JSON.
+- The frame captures intent type, domain/outcome, target/space references, required facts, candidate targets, ambiguity, decision mode, and HCM-level actions.
+- Added Prompt Context Pack v2 so the model sees rooms, affordances, occupancy, conversation focus, personal semantics, and learning hints as structured context.
+- The HCM planner prompt now asks the model to reason at the semantic home layer; provider service selection remains local runtime work.
+
+Boundary: v0.20 does not ask the model for hidden chain-of-thought and does not allow provider service calls in model output.
+
+## v0.21 Semantic Grounding Resolver
+
+Status: implemented and covered by local tests.
+
+- Resolves semantic target names such as `书房射灯` into HCM logical asset IDs before action normalization.
+- Keeps ambiguous targets visible instead of silently choosing one.
+- Adds grounding diagnostics to every normalized HCM plan, including status, candidates, explicit room IDs, evidence, and unresolved reasons.
+- Existing legacy planner actions remain compatible.
+
+Boundary: semantic grounding can propose or resolve HCM targets, but Safety, Policy, Provider Simulation, and Decision Review still decide whether execution is allowed.
+
+## v0.22 Decision Review & Recovery
+
+Status: implemented and covered by local tests.
+
+- Added `decision_review` after Policy Gate and Provider Adapter simulation.
+- Blocks unresolved controls, empty control plans, safety/policy rejection, and provider simulation rejection before any provider execution.
+- Produces recovery modes such as `ask_clarification`, `adapter_diagnosis`, and `safety_review`.
+- User-facing explanations now include decision-review recovery messages instead of only raw rejection codes.
+
+Boundary: review is local and deterministic; it does not call the LLM and does not control devices.
+
+## v0.23 Household Learning Context
+
+Status: implemented and covered by local tests.
+
+- Compiles shadow learning candidates, preference hints, and correction hints into planner guidance.
+- Learning guidance is included in Prompt Context Pack v2 and the LLM payload.
+- `autoApply` remains false; learning cannot create executable actions without fresh HCM grounding and full safety/policy/simulation review.
+
+Boundary: v0.23 is still guidance, not autonomous rule mutation.
+
 ## Current Runtime Chain
 
 ```text
@@ -136,13 +184,18 @@ User Command
   -> HCM Overlay + Personal Semantics
   -> HCM Control Graph
   -> Context Agent Snapshot
+  -> Household Learning Context
   -> Prompt Compile
+  -> Prompt Context Pack v2
   -> LLM Planner
+  -> Intent Frame Normalize
+  -> Semantic Grounding Resolver
   -> Plan Normalize
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
   -> Provider Adapter Compile / Simulate
+  -> Decision Review
   -> Authorized Provider Execute
   -> Provider State Readback
   -> Audit / Learning / Agents

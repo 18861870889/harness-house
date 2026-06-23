@@ -308,6 +308,84 @@ describe("hcm planner compiler", () => {
     });
   });
 
+  it("normalizes intent_frame semantic actions into executable HCM actions", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "打开书房射灯",
+      {
+        intent_frame: {
+          intent_type: "device_control",
+          intent: "turn_on_study_spot",
+          confidence: 0.91,
+          goal: {
+            domain: "lighting",
+            desired_outcome: "turn_on_light",
+            space_refs: ["书房"],
+            target_refs: ["书房射灯"],
+          },
+          grounding: {
+            candidate_targets: [{ target_ref: "书房射灯", confidence: 0.86, reason: "用户明确点名" }],
+          },
+          ambiguity: { level: "low", needs_clarification: false },
+          decision: {
+            mode: "execute",
+            actions: [{ target: "书房射灯", capability: "power", value: true, reason: "用户明确点名书房射灯" }],
+          },
+        },
+        summary: "打开书房射灯",
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("real_hcm");
+    expect(plan.intentFrame).toMatchObject({
+      source: "llm_intent_frame",
+      goal: { domain: "lighting", outcome: "turn_on_light" },
+      decision: { mode: "execute" },
+    });
+    expect(plan.grounding).toMatchObject({
+      version: "0.21",
+      status: "resolved",
+    });
+    expect(plan.actions).toEqual([
+      expect.objectContaining({
+        logicalAssetId: "asset_study_书房射灯",
+        capabilityId: "study_spot",
+        value: true,
+      }),
+    ]);
+  });
+
+  it("keeps high-ambiguity intent frames in clarification instead of guessing", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "开灯",
+      {
+        intent_frame: {
+          intent_type: "device_control",
+          intent: "turn_on_light",
+          confidence: 0.52,
+          goal: { domain: "lighting", desired_outcome: "turn_on_light" },
+          ambiguity: {
+            level: "high",
+            needs_clarification: true,
+            ambiguous_terms: ["灯"],
+            alternatives: ["书房射灯", "书房吊灯", "客厅吊灯"],
+          },
+          decision: { mode: "ask_clarification", reason: "缺少房间和具体灯" },
+        },
+        summary: "需要确认要打开哪盏灯",
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.requiresClarification).toBe(true);
+    expect(plan.actions).toEqual([]);
+    expect(plan.grounding).toMatchObject({
+      status: "needs_clarification",
+      ambiguity: { level: "high" },
+    });
+  });
+
   it("opens another off light when the user says the room is still too dark", () => {
     const plan = normalizeHcmPlannerDraft(
       "还是有点暗",

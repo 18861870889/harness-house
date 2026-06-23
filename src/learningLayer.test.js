@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compileHouseholdLearningContext,
   createLearningMemory,
   deleteLearningCandidate,
   deriveCorrectionCandidates,
@@ -175,5 +176,42 @@ describe("learning layer", () => {
       reason: "目标、集合成员或主执行器不完整，需要补充会话语义或控制图映射",
       safety: { autoApply: false, reason: expect.any(String) },
     });
+  });
+
+  it("compiles shadow learning into planner guidance without auto-apply", () => {
+    const memory = recordLearningObservation(createLearningMemory(), auditEntry("书房灯开一下"), {
+      updatedAt: "2026-06-14T00:00:00.000Z",
+    });
+    const context = compileHouseholdLearningContext(memory, { input: "书房灯开一下" });
+
+    expect(context).toMatchObject({
+      version: "0.23",
+      mode: "shadow",
+      safety: {
+        autoApply: false,
+        reason: expect.stringContaining("must not create executable actions"),
+      },
+    });
+    expect(context.hints).toEqual([
+      expect.objectContaining({
+        input: "书房灯开一下",
+        instruction: expect.stringContaining("Planner hint only"),
+      }),
+    ]);
+  });
+
+  it("exposes correction hints for similar failed commands", () => {
+    const memory = recordLearningObservation(createLearningMemory(), failedAuditEntry("打开射灯"), {
+      updatedAt: "2026-06-14T00:00:00.000Z",
+    });
+    const context = compileHouseholdLearningContext(memory, { input: "打开射灯" });
+
+    expect(context.correctionHints).toEqual([
+      expect.objectContaining({
+        input: "打开射灯",
+        instruction: expect.stringContaining("previous failure pattern"),
+      }),
+    ]);
+    expect(context.hints).toEqual([]);
   });
 });
