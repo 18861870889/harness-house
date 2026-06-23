@@ -149,6 +149,15 @@ describe("hcm planner compiler", () => {
     expect(devices.map((device) => device.id)).toEqual(["asset_living_客厅灯"]);
   });
 
+  it("narrows partial-execution confirmations to the executable pending targets", () => {
+    const devices = compileHcmForPlanner(createStudyPlannerHome(), {
+      input: "执行其他可执行设备",
+      focusTargetIds: ["asset_study_书房吊灯"],
+    });
+
+    expect(devices.map((device) => device.id)).toEqual(["asset_study_书房吊灯"]);
+  });
+
   it("uses room focus for short follow-up prompts after room-level queries", () => {
     const devices = compileHcmForPlanner(createStudyPlannerHome(), {
       input: "开一下",
@@ -157,6 +166,15 @@ describe("hcm planner compiler", () => {
     });
 
     expect(devices.map((device) => device.name)).toEqual(["书房射灯", "书房吊灯"]);
+  });
+
+  it("narrows a bare clarification answer to the focused room and selected lamp type", () => {
+    const devices = compileHcmForPlanner(createStudyPlannerHome(), {
+      input: "吊灯",
+      focusRoomIds: ["study"],
+    });
+
+    expect(devices.map((device) => device.name)).toEqual(["书房吊灯"]);
   });
 
   it("narrows brightness follow-ups to the recent target room instead of all learned rooms", () => {
@@ -413,6 +431,23 @@ describe("hcm planner compiler", () => {
       status: "needs_clarification",
       ambiguity: { level: "high" },
     });
+  });
+
+  it("carries explicit room focus on unresolved controls for the next clarification turn", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "书房灯关一个",
+      {
+        intent_type: "device_control",
+        intent: "关闭书房的一个灯",
+        confidence: 0.82,
+        summary: "需要确认书房哪盏灯",
+        actions: [],
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.contextFocus.rooms).toEqual([{ id: "study", name: "书房" }]);
   });
 
   it("opens another off light when the user says the room is still too dark", () => {

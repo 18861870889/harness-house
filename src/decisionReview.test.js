@@ -74,6 +74,38 @@ describe("decision review", () => {
     expect(review.issues[0]).toMatchObject({ code: "simulation_unsupported_service", severity: "high" });
   });
 
+  it("asks before skipping offline devices when part of a multi-device plan is executable", () => {
+    const review = reviewDecisionBeforeExecution({
+      input: "关闭餐厅灯",
+      plan: {
+        kind: "real_hcm",
+        actions: [
+          { thingId: "dining_chandelier", capabilityId: "power", value: false },
+          { thingId: "dining_spot", capabilityId: "power", value: false },
+        ],
+        grounding: { status: "resolved" },
+      },
+      executionPlan: { accepted: [{}, {}], rejected: [] },
+      policyPlan: { accepted: [{}, {}], rejected: [] },
+      simulation: {
+        ok: false,
+        checks: [
+          { ok: false, code: "thing_offline", thingName: "餐厅吊灯", message: "Aqara 妙控开关 S1E is offline" },
+          { ok: true, code: "supported", thingName: "餐厅射灯", message: "supported" },
+        ],
+        rejected: [{ code: "thing_offline", thingName: "餐厅吊灯", message: "Aqara 妙控开关 S1E is offline" }],
+      },
+    });
+
+    expect(review).toMatchObject({
+      status: "partial_available",
+      blocksExecution: true,
+      recovery: { mode: "ask_partial_execution_confirmation" },
+    });
+    expect(review.recovery.message).toContain("是否跳过不可用设备");
+    expect(review.issues[0]).toMatchObject({ code: "simulation_thing_offline", severity: "medium" });
+  });
+
   it("answers read-only plans without requiring executable actions", () => {
     const review = reviewDecisionBeforeExecution({
       input: "玄关人体目前是什么状态",

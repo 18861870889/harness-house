@@ -120,4 +120,49 @@ describe("intent accuracy engine", () => {
     );
     expect(analysis.requiresConfirmation).toBe(true);
   });
+
+  it("blocks a room-scoped follow-up when the model jumps away from the recent room", () => {
+    const home = createHarnessScenarioHome();
+    const normalized = plan("吊灯", {
+      intent_type: "device_control",
+      intent: "打开客厅灯",
+      confidence: 0.9,
+      actions: [{ device_id: "living_light", capability: "living_light_switch", value: true }],
+    });
+    const analysis = evaluateIntentAccuracy({
+      input: "吊灯",
+      plan: normalized,
+      home,
+      conversation: { focusedRooms: [{ id: "study", name: "书房" }] },
+    });
+
+    expect(analysis.issues).toContainEqual(
+      expect.objectContaining({ code: "conversation_room_mismatch", severity: "critical" }),
+    );
+    expect(analysis.requiresConfirmation).toBe(true);
+  });
+
+  it("lets recent conversation room override passive occupancy for comfort follow-ups", () => {
+    const home = createHarnessScenarioHome();
+    const normalized = plan("还是有点暗", {
+      intent_type: "device_control",
+      intent: "打开客厅灯",
+      confidence: 0.9,
+      actions: [{ device_id: "living_light", capability: "living_light_switch", value: true }],
+    });
+    const analysis = evaluateIntentAccuracy({
+      input: "还是有点暗",
+      plan: normalized,
+      home,
+      context: { likelySpace: { id: "study", name: "书房", confidence: 0.92 } },
+      conversation: {
+        focusedTargets: [{ id: "living_light", name: "客厅灯", roomId: "living" }],
+        focusedRooms: [{ id: "living", name: "客厅" }],
+      },
+    });
+
+    expect(analysis.issues).not.toContainEqual(expect.objectContaining({ code: "conversation_target_mismatch" }));
+    expect(analysis.issues).not.toContainEqual(expect.objectContaining({ code: "context_room_mismatch" }));
+    expect(analysis.requiresConfirmation).toBe(false);
+  });
 });

@@ -59,6 +59,14 @@ export function finishCommandTrace(trace, { status, plan, execution, explanation
     conversation: conversation
       ? {
           focusedTargets: conversation.focusedTargets,
+          focusedRooms: conversation.focusedRooms,
+          pendingPartialExecution: conversation.pendingPartialExecution
+            ? {
+                intent: conversation.pendingPartialExecution.intent,
+                targetCount: conversation.pendingPartialExecution.targets?.length ?? 0,
+                actionCount: conversation.pendingPartialExecution.actions?.length ?? 0,
+              }
+            : null,
           recentTurnCount: conversation.recentTurns?.length ?? 0,
         }
       : null,
@@ -149,6 +157,12 @@ function summarizePlan(plan) {
           mode: plan.stateQuery.mode,
           count: plan.stateQuery.count,
           items: plan.stateQuery.items?.map((item) => ({ id: item.id, name: item.name, roomId: item.roomId, type: item.type })),
+        }
+      : null,
+    contextFocus: plan.contextFocus
+      ? {
+          rooms: plan.contextFocus.rooms,
+          reason: plan.contextFocus.reason,
         }
       : null,
     groupResolution: plan.groupResolution

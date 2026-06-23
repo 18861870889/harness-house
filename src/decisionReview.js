@@ -9,7 +9,8 @@ export function reviewDecisionBeforeExecution({
 } = {}) {
   const issues = [];
   const actionCount = plan?.actions?.length ?? 0;
-  const isReadOnly = ["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback"].includes(plan?.kind);
+  const isReadOnly = ["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback", "hcm_correction_feedback"].includes(plan?.kind);
+  const partialSimulation = hasPartialExecutableSimulation(simulation);
 
   if (plan?.requiresClarification) {
     issues.push(issue("planner_requires_clarification", "high", "计划仍需要用户澄清，不能执行设备动作"));
@@ -27,7 +28,7 @@ export function reviewDecisionBeforeExecution({
     issues.push(issue(`policy_${rejection.code}`, "high", rejection.message || rejection.code));
   }
   for (const rejection of simulation?.rejected ?? []) {
-    issues.push(issue(`simulation_${rejection.code}`, "high", rejection.message || rejection.code));
+    issues.push(issue(`simulation_${rejection.code}`, partialSimulation ? "medium" : "high", rejection.message || rejection.code));
   }
   if (plan?.intentFrame?.ambiguity?.level === "high") {
     issues.push(issue("high_intent_ambiguity", "medium", "意图帧标记高歧义"));
@@ -39,6 +40,8 @@ export function reviewDecisionBeforeExecution({
   const blockingIssues = issues.filter((item) => item.severity === "high" || item.severity === "critical");
   const status = isReadOnly
     ? "answer_only"
+    : partialSimulation
+      ? "partial_available"
     : blockingIssues.length > 0
       ? plan?.requiresClarification || plan?.kind === "unresolved_control"
         ? "needs_clarification"
@@ -51,18 +54,24 @@ export function reviewDecisionBeforeExecution({
     version: DECISION_REVIEW_VERSION,
     status,
     ok: status === "ready" || status === "answer_only" || status === "no_action",
-    blocksExecution: status === "blocked" || status === "needs_clarification",
+    blocksExecution: status === "blocked" || status === "needs_clarification" || status === "partial_available",
     issues,
-    recovery: recoveryForIssues(issues, plan),
+    recovery: recoveryForIssues(issues, plan, simulation),
     summary: summarizeReview(status, issues),
   };
 }
 
-function recoveryForIssues(issues, plan) {
+function recoveryForIssues(issues, plan, simulation) {
   if (issues.length === 0) {
     return {
       mode: "none",
       message: "计划可进入后续模拟/执行阶段",
+    };
+  }
+  if (hasPartialExecutableSimulation(simulation)) {
+    return {
+      mode: "ask_partial_execution_confirmation",
+      message: summarizePartialSimulation(simulation),
     };
   }
   if (issues.some((item) => item.code === "planner_requires_clarification" || item.code === "unresolved_control")) {
@@ -92,6 +101,18 @@ function recoveryForIssues(issues, plan) {
 function summarizeReview(status, issues) {
   if (issues.length === 0) return "决策复核通过；复核阶段未触碰设备。";
   return `${status}：${issues.map((item) => item.message).join("；")}`;
+}
+
+function hasPartialExecutableSimulation(simulation) {
+  const checks = simulation?.checks ?? [];
+  return checks.some((check) => check.ok) && checks.some((check) => !check.ok);
+}
+
+function summarizePartialSimulation(simulation) {
+  const checks = simulation?.checks ?? [];
+  const executable = checks.filter((check) => check.ok).map((check) => check.thingName).filter(Boolean);
+  const unavailable = checks.filter((check) => !check.ok).map((check) => `${check.thingName || "某个设备"}：${check.message || check.code}`);
+  return `其中 ${unavailable.join("；")}。其它可执行设备：${executable.join("、") || "无"}。是否跳过不可用设备，只执行这些可执行设备？`;
 }
 
 function issue(code, severity, message) {

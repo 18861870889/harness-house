@@ -929,6 +929,8 @@ async function runHcmCommandPipeline(payload) {
 
     if (["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback", "hcm_correction_feedback"].includes(plan.kind)) {
       execution.status = "answered";
+    } else if (decisionReview.blocksExecution && decisionReview.status === "partial_available") {
+      execution.status = "needs_confirmation";
     } else if (decisionReview.blocksExecution && decisionReview.status === "needs_clarification") {
       execution.status = "needs_clarification";
     } else if (decisionReview.blocksExecution) {
@@ -1156,6 +1158,18 @@ function compactConversationContext(conversation) {
       id: room.id,
       name: room.name,
     })),
+    pending_partial_execution: conversation.pendingPartialExecution
+      ? {
+          intent: conversation.pendingPartialExecution.intent,
+          actions: conversation.pendingPartialExecution.actions.map((action) => ({
+            device_id: action.logicalAssetId ?? action.thingId,
+            name: action.logicalAssetName ?? action.thingName,
+            room_id: action.logicalRoomId,
+            capability: action.capabilityId,
+            value: action.value,
+          })),
+        }
+      : null,
     recent_turns: (conversation.recentTurns ?? []).slice(-4),
   };
 }

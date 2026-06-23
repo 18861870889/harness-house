@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createConversationContextStore, isComfortFollowUpInput, isReferentialControlInput } from "./conversationContext.js";
+import {
+  createConversationContextStore,
+  isComfortFollowUpInput,
+  isReferentialControlInput,
+  isRoomScopedFollowUpInput,
+} from "./conversationContext.js";
 
 describe("conversation context", () => {
   it("keeps the last resolved logical target for short follow-up commands", () => {
@@ -37,6 +42,86 @@ describe("conversation context", () => {
     expect(store.get("session-1").focusedTargets[0].id).toBe("dining");
   });
 
+  it("keeps room focus after a clarification prompt with an explicit room", () => {
+    const store = createConversationContextStore();
+    store.record("session-1", {
+      input: "书房灯关一个",
+      plan: {
+        intent: "关闭书房的一个灯",
+        intentType: "device_control",
+        contextFocus: { rooms: [{ id: "study", name: "书房" }] },
+        actions: [],
+      },
+      execution: { status: "needs_clarification" },
+    });
+
+    expect(store.get("session-1").focusedTargets).toEqual([]);
+    expect(store.get("session-1").focusedRooms).toEqual([{ id: "study", name: "书房" }]);
+    expect(isRoomScopedFollowUpInput("吊灯")).toBe(true);
+  });
+
+  it("keeps only executable targets after a partial-availability confirmation prompt", () => {
+    const store = createConversationContextStore();
+    store.record("session-1", {
+      input: "关闭餐厅灯",
+      plan: {
+        intent: "关闭餐厅灯",
+        intentType: "scene",
+        actions: [
+          {
+            thingId: "dining_panel",
+            thingName: "餐厅吊灯",
+            logicalAssetId: "asset_dining_chandelier",
+            logicalAssetName: "餐厅吊灯",
+            logicalRoomId: "dining",
+            capabilityId: "chandelier",
+            value: false,
+          },
+          {
+            thingId: "dining_panel",
+            thingName: "餐厅射灯",
+            logicalAssetId: "asset_dining_spot",
+            logicalAssetName: "餐厅射灯",
+            logicalRoomId: "dining",
+            capabilityId: "spot",
+            value: false,
+          },
+        ],
+      },
+      execution: {
+        status: "needs_confirmation",
+        accepted: [
+          {
+            thingId: "dining_panel",
+            thingName: "餐厅吊灯",
+            logicalAssetId: "asset_dining_chandelier",
+            logicalRoomId: "dining",
+            capabilityId: "chandelier",
+            value: false,
+            simulation: { ok: false },
+          },
+          {
+            thingId: "dining_panel",
+            thingName: "餐厅射灯",
+            logicalAssetId: "asset_dining_spot",
+            logicalRoomId: "dining",
+            capabilityId: "spot",
+            value: false,
+            simulation: { ok: true },
+          },
+        ],
+        decisionReview: { recovery: { mode: "ask_partial_execution_confirmation" } },
+      },
+    });
+
+    const context = store.get("session-1");
+    expect(context.focusedTargets).toEqual([{ id: "asset_dining_spot", name: "餐厅射灯", roomId: "dining" }]);
+    expect(context.pendingPartialExecution.actions).toEqual([
+      expect.objectContaining({ logicalAssetId: "asset_dining_spot", capabilityId: "spot", value: false }),
+    ]);
+    expect(isReferentialControlInput("执行其他可执行设备")).toBe(true);
+  });
+
   it("keeps room focus for room-level state queries without pinning one lamp", () => {
     const store = createConversationContextStore();
     store.record("session-1", {
@@ -58,5 +143,6 @@ describe("conversation context", () => {
     expect(isComfortFollowUpInput("不够亮啊")).toBe(true);
     expect(isComfortFollowUpInput("还是有点暗")).toBe(true);
     expect(isReferentialControlInput("不够亮啊")).toBe(true);
+    expect(isRoomScopedFollowUpInput("关灯吧")).toBe(true);
   });
 });

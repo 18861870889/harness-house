@@ -7,7 +7,7 @@ import {
   looksLikeStateQuery,
 } from "./hcmStateQuery.js";
 import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
-import { isComfortFollowUpInput, isReferentialControlInput } from "./conversationContext.js";
+import { isContextualTargetSelectionInput, isReferentialControlInput, isRoomScopedFollowUpInput } from "./conversationContext.js";
 import { INTENT_TYPES, createIntentResolution, normalizeIntentType } from "./intentResolution.js";
 import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
 import { normalizeIntentFrame } from "./intentFrame.js";
@@ -43,8 +43,9 @@ export function compileHcmForPlanner(
   const referentialRooms = new Set([...focusedRooms, ...focusedTargetRooms]);
   if (explicitSpaces.size > 0) {
     candidates = candidates.filter((thing) => explicitSpaces.has(thing.roomId) || focusedTargets.has(thing.id));
-  } else if (referentialRooms.size > 0 && isComfortFollowUpInput(input)) {
+  } else if (referentialRooms.size > 0 && isRoomScopedFollowUpInput(input)) {
     candidates = candidates.filter((thing) => referentialRooms.has(thing.roomId));
+    candidates = applyContextualTargetSelection(input, candidates);
   } else if (focusedTargets.size > 0 && isReferentialControlInput(input)) {
     candidates = candidates.filter((thing) => focusedTargets.has(thing.id));
   } else if (focusedRooms.size > 0 && isReferentialControlInput(input)) {
@@ -62,6 +63,22 @@ export function compileHcmForPlanner(
       return second.capabilities.length - first.capabilities.length;
     })
     .slice(0, limit);
+}
+
+function applyContextualTargetSelection(input, candidates) {
+  if (!isContextualTargetSelectionInput(input)) return candidates;
+  const text = normalizeText(input).replace(/^(第)?/, "").replace(/(吧|呢)$/, "");
+  const matched = candidates.filter((thing) => targetSelectionMatchesThing(text, thing.name));
+  return matched.length > 0 ? matched : candidates;
+}
+
+function targetSelectionMatchesThing(text, name) {
+  const normalizedName = normalizeText(name);
+  if (!text) return false;
+  if (normalizedName.includes(text)) return true;
+  if (text === "吊灯" || text === "主灯") return /吊灯|主灯|吸顶灯/.test(normalizedName);
+  if (text === "灯带") return /灯带|氛围灯/.test(normalizedName);
+  return false;
 }
 
 export function normalizeHcmPlannerDraft(input, draft, home) {
@@ -203,6 +220,11 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     requiresClarification: unresolvedControl || unresolvedStateQuery || intentFrame.decision?.mode === "ask_clarification" || intentFrame.ambiguity?.needsClarification,
     actions: resolvedActions,
     stateQuery,
+    contextFocus: createContextFocus(input, home, {
+      actions: resolvedActions,
+      stateQuery,
+      unresolvedControl,
+    }),
     groupResolution,
     resolution,
     rejected,
@@ -231,6 +253,8 @@ export function buildHcmPlannerSystemPrompt() {
     "Use personal_semantics as hints for household phrases, but still output only valid HCM device ids and capability ids.",
     "Use conversation.focused_targets as the primary referent for short follow-ups such as 关一下, 打开它, or 也打开. Never replace that referent with the selected room.",
     "Use conversation.focused_rooms for short follow-ups when the prior turn was a room-level query instead of a single device query.",
+    "For generic follow-ups such as 关灯吧, 开灯吧, 吊灯, 射灯, 还是暗, or 不够亮, conversation.focused_rooms and the room of conversation.focused_targets are a hard scope. Do not jump to another room.",
+    "If conversation.pending_partial_execution exists and the user confirms with phrases such as 执行其他可执行设备, 跳过离线的, or 继续吧, output exactly those pending actions with the same device ids, capabilities, and values.",
     "Prefer the user's selected/current room when the command is ambiguous.",
     "If the user is giving advice, preference, correction, or a default rule such as 建议, 以后, 下次, 默认, 我希望, or 记住, set intent_type to preference and return no actions.",
     "For ambiguous room light turn-on commands, prefer the household's learned/default light order instead of arbitrarily choosing a lamp.",
@@ -720,6 +744,27 @@ function preferredRoomForLightPolicy(input, actions, home) {
   const actionRoomIds = Array.from(new Set(actions.map((action) => action.logicalRoomId).filter(Boolean)));
   if (actionRoomIds.length === 1) return actionRoomIds[0];
   return null;
+}
+
+function createContextFocus(input, home, { actions = [], stateQuery, unresolvedControl = false } = {}) {
+  const roomIds = new Set();
+  if (stateQuery?.roomId) roomIds.add(stateQuery.roomId);
+  for (const action of actions) {
+    if (action.logicalRoomId) roomIds.add(action.logicalRoomId);
+  }
+  if (unresolvedControl) {
+    for (const roomId of findExplicitRoomIds(input, home)) roomIds.add(roomId);
+  }
+  const rooms = Array.from(roomIds)
+    .map((roomId) => {
+      const room = home.spaces?.find((space) => space.id === roomId);
+      return { id: roomId, name: room?.name ?? roomId };
+    })
+    .filter((room) => room.id);
+  return {
+    rooms,
+    reason: rooms.length > 0 ? "用于后续省略指令和澄清回复的房间焦点" : "",
+  };
 }
 
 function summarizeStateClarification(input, home) {

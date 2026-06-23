@@ -71,6 +71,13 @@ function userMessage({ input, plan, execution, targetNames }) {
   if (execution?.status === "dry_run") {
     return `这是预览：会操作 ${targetNames.join("、") || plan?.intent || input}，不会控制真实设备。`;
   }
+  if (execution?.status === "needs_confirmation") {
+    if (execution.decisionReview?.recovery?.mode === "ask_partial_execution_confirmation") {
+      return execution.decisionReview.recovery.message;
+    }
+    if (execution.decisionReview?.recovery?.message) return `需要你确认：${execution.decisionReview.recovery.message}。`;
+    return plan?.summary || "这一步需要你确认后再执行。";
+  }
   if (execution?.status === "rejected") {
     if (execution.decisionReview?.recovery?.message) return `这次没有执行：${execution.decisionReview.recovery.message}。`;
     const reason = execution.rejected?.map((item) => item.message || item.code).filter(Boolean).join("；");
@@ -96,6 +103,9 @@ function safetyText(plan, execution) {
   if (plan?.kind === "hcm_inventory_query") return "只读家庭知识查询，不执行设备动作。";
   if (plan?.kind === "hcm_correction_feedback") return "纠错反馈只记录，不执行设备动作，也不自动修改映射。";
   if (execution?.status === "needs_clarification") return "目标或控制通道不完整，未执行任何设备动作。";
+  if (execution?.status === "needs_confirmation" && execution.decisionReview?.recovery?.mode === "ask_partial_execution_confirmation") {
+    return "部分设备当前不可用，等待你确认是否只执行可用设备。";
+  }
   if (plan?.needsConfirmation) return "需要用户确认后才能执行。";
   if (execution?.status === "dry_run") return "dry-run 预览，不会控制真实设备。";
   if (execution?.status === "rejected") return "安全门已拒绝执行。";
@@ -117,7 +127,11 @@ function simulationText(execution) {
   const checks = execution?.simulation?.checks;
   if (!Array.isArray(checks) || checks.length === 0) return "";
   const rejected = checks.filter((check) => !check.ok);
-  if (rejected.length > 0) return rejected.map((check) => check.message || check.code).join("；");
+  if (rejected.length > 0) {
+    const executableCount = checks.filter((check) => check.ok).length;
+    const rejectedText = rejected.map((check) => check.message || check.code).join("；");
+    return executableCount > 0 ? `${rejectedText}；另有 ${executableCount} 项可执行，等待确认` : rejectedText;
+  }
   const assumed = checks.filter((check) => check.code === "assumed_supported");
   if (assumed.length > 0) return `通过，${assumed.length} 项因 HA 未暴露 supported_features 采用保守假设`;
   return "通过，未触碰真实设备";
