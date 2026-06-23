@@ -7,11 +7,16 @@ import {
   Cpu,
   Gauge,
   Home,
+  Info,
   Layers3,
+  LocateFixed,
   LockKeyhole,
+  Map as MapIcon,
   Mic,
   MicOff,
+  MousePointer2,
   Network,
+  Pencil,
   Play,
   Power,
   RefreshCw,
@@ -19,6 +24,8 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Trash2,
+  Upload,
   Volume2,
   VolumeX,
   X,
@@ -27,6 +34,17 @@ import ThreeHouse from "./ThreeHouse.jsx";
 import { applyDigitalTwinLayersToScene, buildDigitalTwinLayers } from "./digitalTwinLayers.js";
 import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
+import {
+  assignSpatialDevice,
+  clearSpatialPlacement,
+  createSpatialEditorModel,
+  createSpatialEditorState,
+  NAMING_MODES,
+  placeSpatialDevice,
+  SPATIAL_DEVICE_STATUS,
+  updateSpatialDeviceName,
+  updateSpatialRoomName,
+} from "./spatialHomeEditor.js";
 import {
   applyDefaultRunPolicy,
   captureAutomationEvents,
@@ -63,6 +81,7 @@ import {
 } from "./simulator.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.18B";
 
 function makeMessage(role, content, meta = {}) {
   return {
@@ -86,6 +105,24 @@ function canUseRealHcmCommand(home, llmStatus) {
       llmStatus?.configured &&
       llmStatus?.mode === "real",
   );
+}
+
+function readSpatialEditorState() {
+  if (typeof window === "undefined") return createSpatialEditorState();
+  try {
+    return createSpatialEditorState(JSON.parse(window.localStorage.getItem(SPATIAL_EDITOR_STORAGE_KEY) ?? "{}"));
+  } catch {
+    return createSpatialEditorState();
+  }
+}
+
+function writeSpatialEditorState(state) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SPATIAL_EDITOR_STORAGE_KEY, JSON.stringify(createSpatialEditorState(state)));
+  } catch {
+    // Oversized floor plan images can exceed localStorage; keep the runtime usable.
+  }
 }
 
 export default function App() {
@@ -130,6 +167,7 @@ export default function App() {
     error: null,
     ttsEnabled: true,
   });
+  const [spatialEditorState, setSpatialEditorState] = useState(readSpatialEditorState);
   const inputRef = useRef(null);
   const lastSpokenMessageIdRef = useRef(null);
   const speechInput = useMemo(() => createBrowserSpeechInput(), []);
@@ -160,6 +198,15 @@ export default function App() {
         ? houseSceneModel.devices.filter((device) => device.roomId === selectedRoomId)
         : Object.values(devices).filter((device) => device.roomId === selectedRoomId),
     [devices, houseSceneModel, selectedRoomId],
+  );
+  const spatialEditorModel = useMemo(
+    () =>
+      createSpatialEditorModel({
+        hcmHome,
+        sceneModel: houseSceneModel,
+        state: spatialEditorState,
+      }),
+    [hcmHome, houseSceneModel, spatialEditorState],
   );
   const activeDevices = useMemo(
     () =>
@@ -256,6 +303,10 @@ export default function App() {
   useEffect(() => {
     refreshIntelligence();
   }, [refreshIntelligence]);
+
+  useEffect(() => {
+    writeSpatialEditorState(spatialEditorState);
+  }, [spatialEditorState]);
 
   const applyDefaultRun = useCallback(async () => {
     if (reviewActionId) return;
@@ -819,6 +870,13 @@ export default function App() {
           onboardingActionId={onboardingActionId}
           defaultRunSummary={defaultRunSummary}
         />
+        <SpatialHomeEditor
+          model={spatialEditorModel}
+          state={spatialEditorState}
+          selectedRoomId={selectedRoomId}
+          onStateChange={setSpatialEditorState}
+          onSelectRoom={setSelectedRoomId}
+        />
         <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
       </aside>
@@ -1172,6 +1230,324 @@ function CapabilityBoundarySummary({ summary }) {
 function executableCapabilityCount(thing) {
   return (thing.capabilities ?? []).filter((capability) => capability.kind === "control" || capability.kind === "action")
     .length;
+}
+
+function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom }) {
+  const mapRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const selectedDevice = useMemo(
+    () => (selectedDeviceId ? model.devices.find((device) => device.id === selectedDeviceId) ?? null : null),
+    [model.devices, selectedDeviceId],
+  );
+
+  useEffect(() => {
+    if (selectedDeviceId && !model.devices.some((device) => device.id === selectedDeviceId)) {
+      setSelectedDeviceId(null);
+    }
+  }, [model.devices, selectedDeviceId]);
+
+  const updateState = useCallback(
+    (nextState) => {
+      onStateChange(createSpatialEditorState(nextState));
+    },
+    [onStateChange],
+  );
+
+  const handleFloorPlanUpload = useCallback(
+    (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        updateState({ ...state, floorPlanImage: reader.result });
+      };
+      reader.readAsDataURL(file);
+      event.target.value = "";
+    },
+    [state, updateState],
+  );
+
+  const handleDrop = useCallback(
+    (event, roomId = null) => {
+      event.preventDefault();
+      const deviceId = event.dataTransfer.getData("text/plain");
+      const rect = mapRef.current?.getBoundingClientRect();
+      if (!deviceId || !rect) return;
+      const x = ((event.clientX - rect.left) / rect.width) * 100;
+      const y = ((event.clientY - rect.top) / rect.height) * 100;
+      updateState(placeSpatialDevice(state, deviceId, { x, y, roomId }));
+      setSelectedDeviceId(deviceId);
+      if (roomId) onSelectRoom(roomId);
+    },
+    [onSelectRoom, state, updateState],
+  );
+
+  const handleDeviceDrag = useCallback((event, deviceId) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", deviceId);
+  }, []);
+
+  const handleSelectDevice = useCallback(
+    (device) => {
+      setSelectedDeviceId(device.id);
+      if (device.assignedRoomId) onSelectRoom(device.assignedRoomId);
+    },
+    [onSelectRoom],
+  );
+
+  const handleAssignDevice = useCallback(
+    (deviceId, roomId) => {
+      updateState(assignSpatialDevice(state, deviceId, roomId || null));
+      if (roomId) onSelectRoom(roomId);
+    },
+    [onSelectRoom, state, updateState],
+  );
+
+  const handleNamingMode = useCallback(
+    (namingMode) => updateState({ ...state, namingMode }),
+    [state, updateState],
+  );
+
+  const markers = useMemo(() => {
+    const placed = model.devices
+      .filter((device) => device.placement?.placed)
+      .map((device) => ({ device, x: device.placement.x, y: device.placement.y, ghost: false }));
+    if (!selectedDevice || selectedDevice.placement?.placed) return placed;
+    const room = model.rooms.find((item) => item.id === selectedDevice.assignedRoomId);
+    if (!room?.mapRect) return placed;
+    return [
+      ...placed,
+      {
+        device: selectedDevice,
+        x: room.mapRect.centerX,
+        y: room.mapRect.centerY,
+        ghost: true,
+      },
+    ];
+  }, [model.devices, model.rooms, selectedDevice]);
+
+  const stats = model.stats ?? {};
+
+  return (
+    <section className="panel spatial-editor">
+      <div className="panel-title">
+        <MapIcon size={17} />
+        <h2>Spatial Model</h2>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="上传户型图"
+        >
+          <Upload size={13} />
+        </button>
+      </div>
+
+      <div className="spatial-stats">
+        <span>
+          已定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED] ?? 0}</strong>
+        </span>
+        <span>
+          待定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED] ?? 0}</strong>
+        </span>
+        <span>
+          待归房 <strong>{stats[SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED] ?? 0}</strong>
+        </span>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        className="spatial-file-input"
+        type="file"
+        accept="image/*"
+        onChange={handleFloorPlanUpload}
+      />
+
+      <div
+        ref={mapRef}
+        className="spatial-map"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => handleDrop(event)}
+      >
+        {state.floorPlanImage ? (
+          <img className="spatial-floor-image" src={state.floorPlanImage} alt="户型图" />
+        ) : (
+          <div className="spatial-map-empty">
+            <MousePointer2 size={15} />
+            <span>Drop devices on rooms</span>
+          </div>
+        )}
+        {model.rooms.map((room) => (
+          <button
+            className={room.id === selectedRoomId ? "spatial-room-zone selected" : "spatial-room-zone"}
+            key={room.id}
+            type="button"
+            style={room.mapRect ? {
+              left: `${room.mapRect.left}%`,
+              top: `${room.mapRect.top}%`,
+              width: `${room.mapRect.width}%`,
+              height: `${room.mapRect.height}%`,
+            } : undefined}
+            onClick={() => onSelectRoom(room.id)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => handleDrop(event, room.id)}
+            title={room.editorName}
+          >
+            <span>{room.editorName}</span>
+          </button>
+        ))}
+        {markers.map(({ device, x, y, ghost }) => (
+          <button
+            className={[
+              "spatial-device-marker",
+              device.id === selectedDevice?.id ? "selected" : "",
+              ghost ? "ghost" : "",
+              `role-${device.role}`,
+            ].filter(Boolean).join(" ")}
+            key={`${device.id}:${ghost ? "ghost" : "placed"}`}
+            type="button"
+            style={{ left: `${x}%`, top: `${y}%` }}
+            onClick={() => handleSelectDevice(device)}
+            title={device.displayName}
+          >
+            <LocateFixed size={12} />
+          </button>
+        ))}
+      </div>
+
+      <div className="room-name-grid">
+        {model.rooms.slice(0, 6).map((room) => (
+          <label key={room.id}>
+            <span>{room.name}</span>
+            <input
+              value={state.roomNames[room.id] ?? room.name}
+              onChange={(event) => updateState(updateSpatialRoomName(state, room.id, event.target.value))}
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="naming-toggle" role="group" aria-label="设备命名规则">
+        <button
+          className={state.namingMode === NAMING_MODES.ROOM_DEFAULT ? "selected" : ""}
+          type="button"
+          onClick={() => handleNamingMode(NAMING_MODES.ROOM_DEFAULT)}
+        >
+          房间+默认名
+        </button>
+        <button
+          className={state.namingMode === NAMING_MODES.ROOM_CUSTOM ? "selected" : ""}
+          type="button"
+          onClick={() => handleNamingMode(NAMING_MODES.ROOM_CUSTOM)}
+        >
+          房间+自定义名
+        </button>
+      </div>
+
+      <SpatialDeviceLanes
+        groups={model.groups}
+        selectedDeviceId={selectedDevice?.id}
+        onDragStart={handleDeviceDrag}
+        onSelect={handleSelectDevice}
+      />
+
+      <SpatialDeviceDetail
+        device={selectedDevice}
+        rooms={model.rooms}
+        state={state}
+        onAssign={handleAssignDevice}
+        onRename={(deviceId, value) => updateState(updateSpatialDeviceName(state, deviceId, value))}
+        onClearPlacement={(deviceId) => updateState(clearSpatialPlacement(state, deviceId))}
+      />
+    </section>
+  );
+}
+
+function SpatialDeviceLanes({ groups, selectedDeviceId, onDragStart, onSelect }) {
+  const lanes = [
+    [SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED, "已分配已放置"],
+    [SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED, "已分配待定位"],
+    [SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED, "已放置待归房"],
+    [SPATIAL_DEVICE_STATUS.UNORGANIZED, "未拖入未分配"],
+  ];
+  return (
+    <div className="spatial-device-lanes">
+      {lanes.map(([status, label]) => (
+        <div className={`spatial-lane lane-${status}`} key={status}>
+          <div className="spatial-lane-title">
+            <span>{label}</span>
+            <strong>{groups[status]?.length ?? 0}</strong>
+          </div>
+          <div className="spatial-device-chip-list">
+            {(groups[status] ?? []).slice(0, 5).map((device) => (
+              <button
+                className={device.id === selectedDeviceId ? "spatial-device-chip selected" : "spatial-device-chip"}
+                key={device.id}
+                type="button"
+                draggable
+                onDragStart={(event) => onDragStart(event, device.id)}
+                onClick={() => onSelect(device)}
+                title={device.displayName}
+              >
+                <span>{device.displayName}</span>
+                <small>{device.role === "physical_controller" ? "控制器" : device.type}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SpatialDeviceDetail({ device, rooms, state, onAssign, onRename, onClearPlacement }) {
+  if (!device) return null;
+  return (
+    <div className="spatial-detail">
+      <div className="spatial-detail-header">
+        <Info size={13} />
+        <strong>{device.displayName}</strong>
+        <span>{device.role === "physical_controller" ? "物理控制器" : "逻辑设备"}</span>
+      </div>
+      <div className="spatial-detail-grid">
+        <label>
+          <span>房间</span>
+          <select value={device.assignedRoomId ?? ""} onChange={(event) => onAssign(device.id, event.target.value)}>
+            <option value="">未分配</option>
+            {rooms.map((room) => (
+              <option value={room.id} key={room.id}>
+                {room.editorName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>自定义名</span>
+          <input
+            value={state.customDeviceNames[device.id] ?? ""}
+            placeholder={device.name}
+            onChange={(event) => onRename(device.id, event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="spatial-detail-meta">
+        <span>{device.type}</span>
+        <span>{device.assignedRoomName ?? "未分配"}</span>
+        <span>{device.statusLabel ?? (device.online === false ? "离线" : "在线")}</span>
+      </div>
+      <div className="spatial-detail-actions">
+        <button type="button" onClick={() => onClearPlacement(device.id)} disabled={!device.placement?.placed}>
+          <Trash2 size={12} />
+          清除定位
+        </button>
+        <button type="button" onClick={() => onAssign(device.id, "")}>
+          <Pencil size={12} />
+          取消归房
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function BindingReview({ review, reviewSurfaceCount, onHideThing, actionId }) {

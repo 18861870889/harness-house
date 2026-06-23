@@ -192,7 +192,26 @@
 - `src/learningLayer.test.js`
 - `src/intentExplainer.test.js`
 
-## 15. 自动化测试入口
+## 15. Spatial Home Model Editor
+
+必须覆盖：
+
+- 空间编辑器不能把 HA Area 当成唯一真相；房间归属和地图坐标必须可分开维护。
+- 逻辑资产和物理控制器必须分角色展示，不能把多键开关直接等同于它控制的灯。
+- 已分配已放置、已分配待定位、已放置待归房、未拖入未分配四种设备状态必须稳定分类。
+- 拖拽设备到房间区域时，必须同时产生 placement 和 room assignment。
+- 拖拽设备到非房间地图区域时，必须保留 placement，并进入待归房状态。
+- 清除地图定位不能删除房间归属。
+- 取消归房不能删除地图定位。
+- `房间 + 默认名` 和 `房间 + 自定义名` 两种命名模式必须可预测，不重复叠加房间前缀。
+- 户型图上传和空间编辑状态只保存到浏览器本地状态，不能写 HA、不能写 overlay、不能执行 provider command。
+- 自动化测试不能为了验证空间编辑而调用真实 HA services。
+
+核心测试：
+
+- `src/spatialHomeEditor.test.js`
+
+## 16. 自动化测试入口
 
 核心场景 benchmark 位于：
 
@@ -208,6 +227,7 @@
 - `src/providerOnboarding.test.js`
 - `src/digitalTwinLayers.test.js`
 - `src/policyEngine.test.js`
+- `src/spatialHomeEditor.test.js`
 
 必须运行：
 
@@ -216,7 +236,7 @@ npm test
 npm run build
 ```
 
-## 15. v0.15-v0.18 验收与后续测试焦点
+## 17. v0.15-v0.18 验收与后续测试焦点
 
 ### v0.10 Real Home Pilot
 
@@ -268,3 +288,10 @@ npm run build
 - Planner payload 不应暴露可直接猜测的多键面板 relay；应暴露逻辑设备 `power` 能力。
 - normalize、executor、audit 和 digital twin 必须同时保留逻辑 asset 和 provider thing identity。
 - 房间冲突必须在本地 normalize/accuracy 层发现，不能依赖 LLM 自觉修正。
+
+### v0.18B Spatial Home Model Editor
+
+- 设备空间编辑必须使用 HCM logical asset identity，而不是 provider 原始 entity 作为上层主键。
+- 物理控制器可以被定位在安装房间，逻辑设备可以被定位在受控房间，两者不能互相覆盖。
+- 本地空间编辑状态损坏时必须回退到空状态，不影响命令链路。
+- 大尺寸户型图导致本地存储失败时，页面不能崩溃。
