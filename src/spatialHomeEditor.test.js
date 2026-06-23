@@ -4,9 +4,12 @@ import { attachHcmControlGraph } from "./hcmControlGraph.js";
 import { createHouseSceneModel } from "./houseSceneModel.js";
 import {
   assignSpatialDevice,
+  applySpatialEditorToScene,
+  applySpatialSuggestion,
   clearSpatialPlacement,
   createSpatialEditorModel,
   createSpatialEditorState,
+  dismissSpatialSuggestion,
   NAMING_MODES,
   placeSpatialDevice,
   SPATIAL_DEVICE_STATUS,
@@ -126,5 +129,88 @@ describe("spatial home editor", () => {
 
     expect(model.rooms[0].editorName).toBe("餐区");
     expect(model.devices[0].displayName).toBe("餐区射灯");
+  });
+
+  it("generates explainable placement suggestions that can be accepted or dismissed locally", () => {
+    const hcmHome = createSwitchControlledHome();
+    const sceneModel = createHouseSceneModel({ hcmHome });
+    let state = createSpatialEditorState();
+    let model = createSpatialEditorModel({ hcmHome, sceneModel, state });
+    const suggestion = model.suggestions.find((item) => item.deviceName.includes("餐厅射灯"));
+
+    expect(suggestion).toMatchObject({
+      type: "place_assigned_device",
+      roomId: "dining",
+      patch: { assignmentRoomId: "dining" },
+    });
+    expect(suggestion.patch.placement.x).toBeGreaterThan(0);
+
+    state = applySpatialSuggestion(state, suggestion);
+    model = createSpatialEditorModel({ hcmHome, sceneModel, state });
+    expect(model.devices.find((device) => device.id === suggestion.deviceId)).toMatchObject({
+      spatialStatus: SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED,
+      placement: { placed: true, roomId: "dining" },
+    });
+
+    const nextSuggestion = model.suggestions[0];
+    state = dismissSpatialSuggestion(state, nextSuggestion.id);
+    model = createSpatialEditorModel({ hcmHome, sceneModel, state });
+    expect(model.suggestions.some((item) => item.id === nextSuggestion.id)).toBe(false);
+  });
+
+  it("projects accepted spatial edits into the 3D scene without changing provider data", () => {
+    const sceneModel = {
+      source: "test",
+      rooms: [
+        { id: "study", name: "书房", x: 0, z: 0, width: 2, depth: 2 },
+        { id: "living", name: "客厅", x: 4, z: 0, width: 2, depth: 2 },
+      ],
+      devices: [{ id: "desk_light", name: "台灯", type: "light", roomId: "study", sceneX: 0, sceneZ: 0 }],
+    };
+    let state = createSpatialEditorState({ namingMode: NAMING_MODES.ROOM_CUSTOM });
+    state = updateSpatialRoomName(state, "living", "起居");
+    state = updateSpatialDeviceName(state, "desk_light", "工作灯");
+    state = placeSpatialDevice(state, "desk_light", { x: 100, y: 50, roomId: "living" });
+
+    const spatialModel = createSpatialEditorModel({ sceneModel, state });
+    const projected = applySpatialEditorToScene(sceneModel, spatialModel);
+
+    expect(sceneModel.devices[0]).toMatchObject({ name: "台灯", roomId: "study", sceneX: 0 });
+    expect(projected.rooms.find((room) => room.id === "living")).toMatchObject({
+      name: "起居",
+      deviceCount: 1,
+      spatialSource: "editor",
+    });
+    expect(projected.devices[0]).toMatchObject({
+      name: "起居工作灯",
+      roomId: "living",
+      sceneX: 5,
+      sceneZ: 0,
+      spatialSource: "editor",
+    });
+    expect(projected.spatialProjection).toMatchObject({ applied: true, placedDeviceCount: 1 });
+  });
+
+  it("suggests resolving room mismatches between map placement and assignment", () => {
+    const sceneModel = {
+      source: "test",
+      rooms: [
+        { id: "study", name: "书房", x: 0, z: 0, width: 2, depth: 2 },
+        { id: "living", name: "客厅", x: 4, z: 0, width: 2, depth: 2 },
+      ],
+      devices: [{ id: "light", name: "灯", type: "light", roomId: "study" }],
+    };
+    const state = createSpatialEditorState({
+      devicePlacements: { light: { placed: true, x: 80, y: 50, roomId: "living" } },
+    });
+
+    const model = createSpatialEditorModel({ sceneModel, state });
+    const suggestion = model.suggestions.find((item) => item.type === "review_room_mismatch");
+
+    expect(suggestion).toMatchObject({
+      deviceId: "light",
+      roomId: "living",
+      title: "检查客厅归属",
+    });
   });
 });

@@ -4,7 +4,7 @@
 
 ## Current Version
 
-Current engineering progress: `v0.18B`.
+Current engineering progress: `v0.19`.
 
 Completed major runtime capabilities:
 
@@ -36,6 +36,7 @@ Completed major runtime capabilities:
 - Primary relay vs remote-binding classification in the Control Graph.
 - Provider state readback after execution; service acceptance alone is not final success.
 - Local Spatial Home Model Editor for floor-plan upload, room renaming, device placement, naming modes, and logical-asset vs physical-controller organization.
+- Assisted spatial mapping suggestions and local 2D -> 3D digital-twin projection.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -115,6 +116,17 @@ Status: implemented for the local editor scope.
 - Stores editor state in browser local storage only; it does not write Home Assistant, overlay files, or provider mappings.
 - Covered by `src/spatialHomeEditor.test.js`; automated validation remains dry-run/read-only and does not control real devices.
 
+## v0.19 Assisted Mapping And 2D/3D Sync
+
+Status: implemented for local suggestions and digital-twin projection.
+
+- Generates explainable placement suggestions from HCM semantic rooms, controller installation rooms, and current map placement.
+- Suggestions can be accepted or dismissed locally; accepting them updates only the browser spatial editor state.
+- Accepted room names, room assignments, and map coordinates are projected into the 3D scene model before digital-twin layers are applied.
+- 3D room/device labels and device positions now reflect confirmed spatial edits while the command runtime still uses HCM identities and policy gates.
+- Existing v0.18B local storage is migrated into the v0.19 state shape.
+- Boundary: v0.19 does not write Home Assistant areas, does not write HCM Overlay mapping, and does not perform automatic floor-plan recognition.
+
 ## Current Runtime Chain
 
 ```text
@@ -145,23 +157,6 @@ Key boundaries:
 - The active Provider Adapter validates its command against current HCM evidence before any real device call; HA currently reuses the strict HA Service Simulator internally.
 
 ## Near-Term Plan
-
-### v0.19 - Assisted Mapping And 2D/3D Sync
-
-Goal: make the new spatial editor actively support mapping work instead of remaining a local visual organizer.
-
-Scope:
-
-- Generate device room/placement suggestions from HA Area, HCM Control Graph, naming, and existing spatial data.
-- Sync confirmed 2D placements into the 3D digital twin scene model.
-- Keep stable logical device identity when provider entities are renamed, moved, or replaced.
-- Add review states for suggested placement changes without automatically changing provider or overlay mappings.
-
-Exit criteria:
-
-- Existing spatial state survives HCM refreshes and provider identity changes.
-- Suggested placements are explainable and can be accepted/rejected locally.
-- 3D room/device positions reflect accepted 2D spatial model data.
 
 ### v0.10 - Real Home Pilot
 

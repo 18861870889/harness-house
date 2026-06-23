@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.18B`
+当前进度：`v0.19`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -104,11 +104,13 @@ Provider Raw Graph
 ### Spatial Home Model Editor
 
 - 左侧新增本地空间编辑器，用于维护“房间语义、地图位置、设备命名”的家庭空间模型。
-- 支持上传户型图；当前先存储在浏览器本地状态，不写 provider，也不控制真实设备。
+- 支持上传户型图；空间状态存储在浏览器本地，不写 provider，也不控制真实设备。
 - 设备分为 `已分配已放置`、`已分配待定位`、`已放置待归房`、`未拖入未分配` 四类。
 - 逻辑设备和物理控制器分开展示：例如 `书房射灯` 是生活视图里的受控对象，`书房三键开关` 是维护视图里的执行路径。
 - 支持两种命名规则：`房间 + HA/HCM 默认名`、`房间 + 自定义设备名`。
 - 点击设备可定位地图标记并查看角色、房间、能力状态和 provider identity。
+- 根据 HCM 语义房间、控制器安装房间和地图位置生成本地归房/定位建议。
+- 接受建议后会同步到 3D 数字孪生的房间名、设备归属和设备坐标，但不改变 HA/HCM 原始数据。
 
 ### Safety & Debugging
 
@@ -327,10 +329,10 @@ Context Snapshot
 - `v0.18.1` Intent And Control Closed Loop
 - `v0.18.2` Lighting Preference Loop
 - `v0.18B` Spatial Home Model Editor
+- `v0.19` Assisted Mapping And 2D/3D Sync
 
 后续重点：
 
-- `v0.19` Assisted Mapping And 2D/3D Sync：把空间编辑结果同步回 3D，并生成更好的设备归房建议。
 - `v0.10` Real Home Pilot：完成真实住宅七天稳定性和低风险设备验收。
 - `v1.0` Local-first Open Smart Home AI Framework。
 

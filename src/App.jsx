@@ -36,9 +36,12 @@ import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
   assignSpatialDevice,
+  applySpatialEditorToScene,
+  applySpatialSuggestion,
   clearSpatialPlacement,
   createSpatialEditorModel,
   createSpatialEditorState,
+  dismissSpatialSuggestion,
   NAMING_MODES,
   placeSpatialDevice,
   SPATIAL_DEVICE_STATUS,
@@ -81,7 +84,8 @@ import {
 } from "./simulator.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.18B";
+const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.19";
+const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = ["harness-house.spatial-editor.v0.18B"];
 
 function makeMessage(role, content, meta = {}) {
   return {
@@ -109,11 +113,15 @@ function canUseRealHcmCommand(home, llmStatus) {
 
 function readSpatialEditorState() {
   if (typeof window === "undefined") return createSpatialEditorState();
-  try {
-    return createSpatialEditorState(JSON.parse(window.localStorage.getItem(SPATIAL_EDITOR_STORAGE_KEY) ?? "{}"));
-  } catch {
-    return createSpatialEditorState();
+  for (const key of [SPATIAL_EDITOR_STORAGE_KEY, ...SPATIAL_EDITOR_LEGACY_STORAGE_KEYS]) {
+    try {
+      const value = window.localStorage.getItem(key);
+      if (value) return createSpatialEditorState(JSON.parse(value));
+    } catch {
+      return createSpatialEditorState();
+    }
   }
+  return createSpatialEditorState();
 }
 
 function writeSpatialEditorState(state) {
@@ -174,39 +182,45 @@ export default function App() {
   const speechOutput = useMemo(() => createBrowserSpeechOutput(), []);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
-  const houseSceneModel = useMemo(
-    () => {
-      const baseModel = createHouseSceneModel({
+  const baseHouseSceneModel = useMemo(
+    () =>
+      createHouseSceneModel({
         hcmHome,
         simulatorRooms: rooms,
         simulatorDevices: devices,
-      });
-      const twinLayers = buildDigitalTwinLayers({
-        sceneModel: baseModel,
-        selectedRoomId,
-        context: agentSnapshot?.agents?.context,
-        plan: lastPlan,
-        diagnostics: agentSnapshot?.agents?.diagnostics,
-      });
-      return applyDigitalTwinLayersToScene(baseModel, twinLayers);
-    },
-    [agentSnapshot, devices, hcmHome, lastPlan, selectedRoomId],
-  );
-  const selectedRoomDevices = useMemo(
-    () =>
-      houseSceneModel.source === "hcm"
-        ? houseSceneModel.devices.filter((device) => device.roomId === selectedRoomId)
-        : Object.values(devices).filter((device) => device.roomId === selectedRoomId),
-    [devices, houseSceneModel, selectedRoomId],
+      }),
+    [devices, hcmHome],
   );
   const spatialEditorModel = useMemo(
     () =>
       createSpatialEditorModel({
         hcmHome,
-        sceneModel: houseSceneModel,
+        sceneModel: baseHouseSceneModel,
         state: spatialEditorState,
       }),
-    [hcmHome, houseSceneModel, spatialEditorState],
+    [baseHouseSceneModel, hcmHome, spatialEditorState],
+  );
+  const spatialHouseSceneModel = useMemo(
+    () => applySpatialEditorToScene(baseHouseSceneModel, spatialEditorModel),
+    [baseHouseSceneModel, spatialEditorModel],
+  );
+  const houseSceneModel = useMemo(
+    () => {
+      const twinLayers = buildDigitalTwinLayers({
+        sceneModel: spatialHouseSceneModel,
+        selectedRoomId,
+        context: agentSnapshot?.agents?.context,
+        plan: lastPlan,
+        diagnostics: agentSnapshot?.agents?.diagnostics,
+      });
+      return applyDigitalTwinLayersToScene(spatialHouseSceneModel, twinLayers);
+    },
+    [agentSnapshot, lastPlan, selectedRoomId, spatialHouseSceneModel],
+  );
+  const selectedRoomDevices = useMemo(
+    () =>
+      houseSceneModel.devices.filter((device) => device.roomId === selectedRoomId),
+    [houseSceneModel, selectedRoomId],
   );
   const activeDevices = useMemo(
     () =>
@@ -1309,6 +1323,22 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
     [state, updateState],
   );
 
+  const handleApplySuggestion = useCallback(
+    (suggestion) => {
+      updateState(applySpatialSuggestion(state, suggestion));
+      setSelectedDeviceId(suggestion.deviceId);
+      if (suggestion.roomId) onSelectRoom(suggestion.roomId);
+    },
+    [onSelectRoom, state, updateState],
+  );
+
+  const handleDismissSuggestion = useCallback(
+    (suggestion) => {
+      updateState(dismissSpatialSuggestion(state, suggestion.id));
+    },
+    [state, updateState],
+  );
+
   const markers = useMemo(() => {
     const placed = model.devices
       .filter((device) => device.placement?.placed)
@@ -1355,6 +1385,12 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
           待归房 <strong>{stats[SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED] ?? 0}</strong>
         </span>
       </div>
+
+      <SpatialSuggestions
+        suggestions={model.suggestions}
+        onApply={handleApplySuggestion}
+        onDismiss={handleDismissSuggestion}
+      />
 
       <input
         ref={fileInputRef}
@@ -1461,6 +1497,35 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
         onClearPlacement={(deviceId) => updateState(clearSpatialPlacement(state, deviceId))}
       />
     </section>
+  );
+}
+
+function SpatialSuggestions({ suggestions = [], onApply, onDismiss }) {
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="spatial-suggestions">
+      <div className="spatial-suggestions-title">
+        <span>Suggestions</span>
+        <strong>{suggestions.length}</strong>
+      </div>
+      {suggestions.slice(0, 3).map((suggestion) => (
+        <div className="spatial-suggestion" key={suggestion.id}>
+          <div>
+            <strong>{suggestion.deviceName}</strong>
+            <span>{suggestion.title}</span>
+            <small>{suggestion.reason}</small>
+          </div>
+          <div className="spatial-suggestion-actions">
+            <button type="button" onClick={() => onApply(suggestion)} title="接受建议">
+              <Check size={12} />
+            </button>
+            <button type="button" onClick={() => onDismiss(suggestion)} title="忽略建议">
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
