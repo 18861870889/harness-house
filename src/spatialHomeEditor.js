@@ -1,4 +1,4 @@
-export const SPATIAL_EDITOR_VERSION = "0.20";
+export const SPATIAL_EDITOR_VERSION = "0.22";
 
 const MIN_ROOM_RECT_SIZE = 4;
 
@@ -26,6 +26,8 @@ export function createSpatialEditorState(base = {}) {
     floorPlanImage: typeof base.floorPlanImage === "string" ? base.floorPlanImage : null,
     floorPlanImageName: typeof base.floorPlanImageName === "string" ? base.floorPlanImageName : "",
     floorPlanImageSize: Number.isFinite(Number(base.floorPlanImageSize)) ? Number(base.floorPlanImageSize) : 0,
+    floorPlanImageAspectRatio: normalizeAspectRatio(base.floorPlanImageAspectRatio),
+    floorPlanCoordinateMode: base.floorPlanCoordinateMode === "image" ? "image" : "container",
     floorPlanImageUpdatedAt: typeof base.floorPlanImageUpdatedAt === "string" ? base.floorPlanImageUpdatedAt : "",
     roomNames: normalizeRecord(base.roomNames),
     roomRects: normalizeRectRecord(base.roomRects),
@@ -86,6 +88,35 @@ export function placeSpatialDevice(state, deviceId, { x, y, roomId = null } = {}
     roomId: roomId || null,
   };
   next.deviceAssignments[deviceId] = roomId || null;
+  return next;
+}
+
+export function migrateSpatialEditorStateToImageCoordinates(
+  state,
+  { containerWidth, containerHeight, imageAspectRatio } = {},
+) {
+  const next = createSpatialEditorState(state);
+  const frame = calculateContainedImageFrame({ containerWidth, containerHeight, imageAspectRatio });
+  if (!frame) return {
+    ...next,
+    floorPlanImageAspectRatio: normalizeAspectRatio(imageAspectRatio),
+    floorPlanCoordinateMode: "image",
+  };
+  next.floorPlanImageAspectRatio = normalizeAspectRatio(imageAspectRatio);
+  next.floorPlanCoordinateMode = "image";
+  next.roomRects = Object.fromEntries(
+    Object.entries(next.roomRects).map(([roomId, rect]) => [roomId, convertRectFromContainerToImage(rect, frame)]),
+  );
+  next.customRooms = next.customRooms.map((room) => ({
+    ...room,
+    mapRect: convertRectFromContainerToImage(room.mapRect, frame),
+  }));
+  next.devicePlacements = Object.fromEntries(
+    Object.entries(next.devicePlacements).map(([deviceId, placement]) => [
+      deviceId,
+      convertPlacementFromContainerToImage(placement, frame),
+    ]),
+  );
   return next;
 }
 
@@ -557,6 +588,60 @@ function normalizePlacementRecord(value) {
 function normalizeStringArray(value) {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function normalizeAspectRatio(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.max(0.1, Math.min(10, Math.round(number * 10000) / 10000));
+}
+
+function calculateContainedImageFrame({ containerWidth, containerHeight, imageAspectRatio } = {}) {
+  const width = Number(containerWidth);
+  const height = Number(containerHeight);
+  const aspectRatio = normalizeAspectRatio(imageAspectRatio);
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0 || !aspectRatio) return null;
+  const containerRatio = width / height;
+  if (containerRatio > aspectRatio) {
+    const imageHeight = height;
+    const imageWidth = height * aspectRatio;
+    return {
+      imageWidth,
+      imageHeight,
+      offsetX: (width - imageWidth) / 2,
+      offsetY: 0,
+      containerWidth: width,
+      containerHeight: height,
+    };
+  }
+  const imageWidth = width;
+  const imageHeight = width / aspectRatio;
+  return {
+    imageWidth,
+    imageHeight,
+    offsetX: 0,
+    offsetY: (height - imageHeight) / 2,
+    containerWidth: width,
+    containerHeight: height,
+  };
+}
+
+function convertRectFromContainerToImage(rect, frame) {
+  const normalized = normalizeEditorRect(rect);
+  return normalizeEditorRect({
+    left: (((normalized.left / 100) * frame.containerWidth - frame.offsetX) / frame.imageWidth) * 100,
+    top: (((normalized.top / 100) * frame.containerHeight - frame.offsetY) / frame.imageHeight) * 100,
+    width: ((normalized.width / 100) * frame.containerWidth / frame.imageWidth) * 100,
+    height: ((normalized.height / 100) * frame.containerHeight / frame.imageHeight) * 100,
+  });
+}
+
+function convertPlacementFromContainerToImage(placement, frame) {
+  return {
+    ...placement,
+    x: clampPercent((((clampPercent(placement.x) / 100) * frame.containerWidth - frame.offsetX) / frame.imageWidth) * 100),
+    y: clampPercent((((clampPercent(placement.y) / 100) * frame.containerHeight - frame.offsetY) / frame.imageHeight) * 100),
+  };
 }
 
 function clampPercent(value) {

@@ -45,6 +45,7 @@ import {
   createSpatialEditorState,
   dismissSpatialSuggestion,
   findSpatialRoomAtPoint,
+  migrateSpatialEditorStateToImageCoordinates,
   NAMING_MODES,
   placeSpatialDevice,
   removeSpatialRoom,
@@ -89,8 +90,13 @@ import {
 } from "./simulator.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.20";
-const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = ["harness-house.spatial-editor.v0.19", "harness-house.spatial-editor.v0.18B"];
+const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.22";
+const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = [
+  "harness-house.spatial-editor.v0.21",
+  "harness-house.spatial-editor.v0.20",
+  "harness-house.spatial-editor.v0.19",
+  "harness-house.spatial-editor.v0.18B",
+];
 const APP_VIEWS = {
   CONTROL: "control",
   MAP_EDITOR: "map-editor",
@@ -1098,6 +1104,9 @@ function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateCh
       </header>
       <div className="map-workspace-status">
         <span>参考底图：{state.floorPlanImageName || "未上传"}</span>
+        <span>
+          {state.floorPlanCoordinateMode === "image" && state.floorPlanImageAspectRatio ? "底图比例已锁定" : "正在校准底图比例"}
+        </span>
         <span>生效结构：{model.rooms.length} 房间，{editedRoomCount} 个已校准</span>
         <strong>已自动保存并应用到本地 3D/空间语义</strong>
       </div>
@@ -1381,6 +1390,7 @@ function executableCapabilityCount(thing) {
 function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom, workspace = false }) {
   const mapRef = useRef(null);
   const fileInputRef = useRef(null);
+  const floorImageRef = useRef(null);
   const stateRef = useRef(state);
   const activeRoomEditRef = useRef(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
@@ -1453,13 +1463,24 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
       if (!isImageFile(file)) return;
       const reader = new FileReader();
       reader.onload = () => {
-        updateState({
+        const floorPlanImage = reader.result;
+        const nextState = {
           ...state,
-          floorPlanImage: reader.result,
+          floorPlanImage,
           floorPlanImageName: file.name,
           floorPlanImageSize: file.size,
+          floorPlanCoordinateMode: "image",
           floorPlanImageUpdatedAt: new Date().toISOString(),
-        });
+        };
+        const image = new Image();
+        image.onload = () => {
+          updateState({
+            ...nextState,
+            floorPlanImageAspectRatio: image.naturalWidth / image.naturalHeight,
+          });
+        };
+        image.onerror = () => updateState(nextState);
+        image.src = floorPlanImage;
       };
       reader.readAsDataURL(file);
     },
@@ -1475,6 +1496,46 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
     },
     [readFloorPlanFile],
   );
+
+  const applyFloorImageMetrics = useCallback(
+    (image) => {
+      const aspectRatio = image.naturalWidth / image.naturalHeight;
+      if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) return;
+      if (state.floorPlanCoordinateMode !== "image") {
+        const mapRect = mapRef.current?.getBoundingClientRect();
+        updateState(migrateSpatialEditorStateToImageCoordinates(state, {
+          containerWidth: mapRect?.width,
+          containerHeight: mapRect?.height,
+          imageAspectRatio: aspectRatio,
+        }));
+        return;
+      }
+      if (Math.abs((state.floorPlanImageAspectRatio ?? 0) - aspectRatio) < 0.0001) return;
+      updateState({
+        ...state,
+        floorPlanImageAspectRatio: aspectRatio,
+      });
+    },
+    [state, updateState],
+  );
+
+  const handleFloorImageLoad = useCallback(
+    (event) => {
+      applyFloorImageMetrics(event.currentTarget);
+    },
+    [applyFloorImageMetrics],
+  );
+
+  useEffect(() => {
+    const image = floorImageRef.current;
+    if (!state.floorPlanImage || !image?.complete) return;
+    applyFloorImageMetrics(image);
+  }, [
+    applyFloorImageMetrics,
+    state.floorPlanCoordinateMode,
+    state.floorPlanImage,
+    state.floorPlanImageAspectRatio,
+  ]);
 
   const handleAddRoom = useCallback(() => {
     const nextIndex = state.customRooms.length + 1;
@@ -1624,6 +1685,12 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
   }, [model.devices, model.rooms, selectedDevice]);
 
   const stats = model.stats ?? {};
+  const floorPlanRatioLocked = Boolean(
+    state.floorPlanImage && state.floorPlanCoordinateMode === "image" && state.floorPlanImageAspectRatio,
+  );
+  const mapStyle = floorPlanRatioLocked
+    ? { "--floor-plan-aspect-ratio": String(state.floorPlanImageAspectRatio) }
+    : undefined;
 
   return (
     <section className={workspace ? "panel spatial-editor workspace" : "panel spatial-editor"}>
@@ -1665,14 +1732,22 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
             className={[
               "spatial-map",
               state.floorPlanImage ? "has-floor-plan" : "",
+              floorPlanRatioLocked ? "ratio-locked" : "",
               floorPlanDragActive ? "upload-active" : "",
             ].filter(Boolean).join(" ")}
+            style={mapStyle}
             onDragOver={handleMapDragOver}
             onDragLeave={handleMapDragLeave}
             onDrop={(event) => handleDrop(event)}
           >
             {state.floorPlanImage ? (
-              <img className="spatial-floor-image" src={state.floorPlanImage} alt="户型图" />
+              <img
+                ref={floorImageRef}
+                className="spatial-floor-image"
+                src={state.floorPlanImage}
+                alt="户型图"
+                onLoad={handleFloorImageLoad}
+              />
             ) : (
               <div className="spatial-map-empty">
                 <MousePointer2 size={15} />

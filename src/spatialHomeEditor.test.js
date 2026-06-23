@@ -12,6 +12,7 @@ import {
   createSpatialEditorState,
   dismissSpatialSuggestion,
   findSpatialRoomAtPoint,
+  migrateSpatialEditorStateToImageCoordinates,
   NAMING_MODES,
   placeSpatialDevice,
   removeSpatialRoom,
@@ -67,6 +68,8 @@ describe("spatial home editor", () => {
       floorPlanImage: "data:image/png;base64,abc",
       floorPlanImageName: "户型图.png",
       floorPlanImageSize: 2048,
+      floorPlanImageAspectRatio: 0.5625,
+      floorPlanCoordinateMode: "image",
       floorPlanImageUpdatedAt: "2026-06-23T00:00:00.000Z",
     });
 
@@ -74,7 +77,37 @@ describe("spatial home editor", () => {
       floorPlanImage: "data:image/png;base64,abc",
       floorPlanImageName: "户型图.png",
       floorPlanImageSize: 2048,
+      floorPlanImageAspectRatio: 0.5625,
+      floorPlanCoordinateMode: "image",
       floorPlanImageUpdatedAt: "2026-06-23T00:00:00.000Z",
+    });
+  });
+
+  it("migrates legacy container coordinates into floor-plan image coordinates", () => {
+    const state = createSpatialEditorState({
+      roomRects: {
+        study: { left: 20, top: 30, width: 20, height: 10 },
+      },
+      devicePlacements: {
+        lamp: { placed: true, x: 30, y: 35, roomId: "study" },
+      },
+    });
+
+    const migrated = migrateSpatialEditorStateToImageCoordinates(state, {
+      containerWidth: 100,
+      containerHeight: 200,
+      imageAspectRatio: 1,
+    });
+
+    expect(migrated).toMatchObject({
+      floorPlanImageAspectRatio: 1,
+      floorPlanCoordinateMode: "image",
+      roomRects: {
+        study: { left: 20, top: 10, width: 20, height: 20, centerX: 30, centerY: 20 },
+      },
+      devicePlacements: {
+        lamp: { placed: true, x: 30, y: 20, roomId: "study" },
+      },
     });
   });
 
