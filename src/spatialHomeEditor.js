@@ -1,4 +1,6 @@
-export const SPATIAL_EDITOR_VERSION = "0.19";
+export const SPATIAL_EDITOR_VERSION = "0.20";
+
+const MIN_ROOM_RECT_SIZE = 4;
 
 export const SPATIAL_DEVICE_STATUS = {
   ASSIGNED_PLACED: "assigned_placed",
@@ -26,6 +28,8 @@ export function createSpatialEditorState(base = {}) {
     floorPlanImageSize: Number.isFinite(Number(base.floorPlanImageSize)) ? Number(base.floorPlanImageSize) : 0,
     floorPlanImageUpdatedAt: typeof base.floorPlanImageUpdatedAt === "string" ? base.floorPlanImageUpdatedAt : "",
     roomNames: normalizeRecord(base.roomNames),
+    roomRects: normalizeRectRecord(base.roomRects),
+    customRooms: normalizeCustomRooms(base.customRooms),
     deviceAssignments: normalizeRecord(base.deviceAssignments),
     devicePlacements: normalizePlacementRecord(base.devicePlacements),
     customDeviceNames: normalizeRecord(base.customDeviceNames),
@@ -85,6 +89,42 @@ export function placeSpatialDevice(state, deviceId, { x, y, roomId = null } = {}
   return next;
 }
 
+export function addSpatialRoom(state, room = {}) {
+  const next = createSpatialEditorState(state);
+  const id = uniqueSpatialRoomId(room.id, next);
+  const name = String(room.name ?? "").trim() || "新房间";
+  const mapRect = normalizeEditorRect(room.mapRect ?? room.rect ?? defaultCustomRoomRect(next.customRooms.length));
+  next.customRooms = [...next.customRooms, { id, name, type: room.type || "generic", mapRect }];
+  next.roomNames[id] = name;
+  next.roomRects[id] = mapRect;
+  return next;
+}
+
+export function removeSpatialRoom(state, roomId) {
+  const next = createSpatialEditorState(state);
+  if (!roomId || !next.customRooms.some((room) => room.id === roomId)) return next;
+  next.customRooms = next.customRooms.filter((room) => room.id !== roomId);
+  delete next.roomNames[roomId];
+  delete next.roomRects[roomId];
+  for (const [deviceId, assignedRoomId] of Object.entries(next.deviceAssignments)) {
+    if (assignedRoomId === roomId) next.deviceAssignments[deviceId] = null;
+  }
+  for (const [deviceId, placement] of Object.entries(next.devicePlacements)) {
+    if (placement.roomId === roomId) next.devicePlacements[deviceId] = { ...placement, roomId: null };
+  }
+  return next;
+}
+
+export function updateSpatialRoomRect(state, roomId, rect) {
+  const next = createSpatialEditorState(state);
+  if (!roomId) return next;
+  next.roomRects[roomId] = normalizeEditorRect(rect);
+  next.customRooms = next.customRooms.map((room) =>
+    room.id === roomId ? { ...room, mapRect: next.roomRects[roomId] } : room
+  );
+  return next;
+}
+
 export function assignSpatialDevice(state, deviceId, roomId) {
   const next = createSpatialEditorState(state);
   if (!deviceId) return next;
@@ -108,6 +148,7 @@ export function updateSpatialRoomName(state, roomId, name) {
   const value = String(name ?? "").trim();
   if (value) next.roomNames[roomId] = value;
   else delete next.roomNames[roomId];
+  next.customRooms = next.customRooms.map((room) => (room.id === roomId ? { ...room, name: value || room.name } : room));
   return next;
 }
 
@@ -178,13 +219,17 @@ export function applySpatialEditorToScene(sceneModel, spatialModel) {
     };
   });
   const deviceCounts = countProjectedDevices(projectedDevices);
-  const projectedRooms = (sceneModel.rooms ?? []).map((room) => {
-    const spatialRoom = roomById.get(room.id);
+  const projectedRooms = (spatialModel.rooms ?? []).map((spatialRoom) => {
+    const originalRoom = (sceneModel.rooms ?? []).find((room) => room.id === spatialRoom.id);
     return {
-      ...room,
-      name: spatialRoom?.editorName ?? room.name,
-      deviceCount: deviceCounts.get(room.id) ?? 0,
-      spatialSource: spatialRoom && spatialRoom.editorName !== room.name ? "editor" : room.spatialSource,
+      ...originalRoom,
+      ...spatialRoom,
+      name: spatialRoom.editorName ?? spatialRoom.name,
+      deviceCount: deviceCounts.get(spatialRoom.id) ?? 0,
+      spatialSource:
+        spatialRoom.spatialSource === "editor" || spatialRoom.editorName !== originalRoom?.name
+          ? "editor"
+          : originalRoom?.spatialSource,
     };
   });
   return {
@@ -213,13 +258,53 @@ export function mapSceneRoomToEditorRect(room, bounds) {
   };
 }
 
+export function findSpatialRoomAtPoint(rooms = [], x, y) {
+  const px = clampPercent(x);
+  const py = clampPercent(y);
+  return [...rooms]
+    .reverse()
+    .find((room) => {
+      const rect = room.mapRect;
+      return (
+        rect &&
+        px >= rect.left &&
+        px <= rect.left + rect.width &&
+        py >= rect.top &&
+        py <= rect.top + rect.height
+      );
+    }) ?? null;
+}
+
 function normalizeEditorRooms(sceneRooms, state) {
   const bounds = calculateSceneBounds(sceneRooms);
-  return sceneRooms.map((room) => ({
-    ...room,
-    editorName: state.roomNames[room.id] || room.name,
-    mapRect: mapSceneRoomToEditorRect(room, bounds),
-  }));
+  const baseRooms = sceneRooms.map((room) => {
+    const overrideRect = state.roomRects[room.id];
+    const mapRect = overrideRect ?? mapSceneRoomToEditorRect(room, bounds);
+    const geometry = overrideRect ? editorRectToSceneRoom(mapRect, bounds) : {};
+    return {
+      ...room,
+      ...geometry,
+      editorName: state.roomNames[room.id] || room.name,
+      mapRect,
+      custom: false,
+      spatialSource: overrideRect ? "editor" : room.spatialSource,
+    };
+  });
+  const customRooms = state.customRooms.map((room) => {
+    const mapRect = state.roomRects[room.id] ?? room.mapRect;
+    return {
+      ...editorRectToSceneRoom(mapRect, bounds),
+      id: room.id,
+      name: room.name,
+      type: room.type || "generic",
+      editorName: state.roomNames[room.id] || room.name,
+      mapRect,
+      custom: true,
+      spatialSource: "editor",
+      deviceCount: 0,
+    };
+  });
+  return [...baseRooms, ...customRooms];
 }
 
 function createSpatialSuggestions({ rooms, devices, state }) {
@@ -424,6 +509,34 @@ function normalizeRecord(value) {
   return Object.fromEntries(Object.entries(value).filter(([key, entry]) => key && (typeof entry === "string" || entry === null)));
 }
 
+function normalizeRectRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, rect]) => key && rect && typeof rect === "object")
+      .map(([key, rect]) => [key, normalizeEditorRect(rect)]),
+  );
+}
+
+function normalizeCustomRooms(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value
+    .filter((room) => room && typeof room === "object")
+    .map((room, index) => {
+      const id = String(room.id ?? "").trim() || `custom_room_${index + 1}`;
+      if (seen.has(id)) return null;
+      seen.add(id);
+      return {
+        id,
+        name: String(room.name ?? "").trim() || "新房间",
+        type: String(room.type ?? "").trim() || "generic",
+        mapRect: normalizeEditorRect(room.mapRect ?? room.rect ?? defaultCustomRoomRect(index)),
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizePlacementRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
@@ -450,6 +563,61 @@ function clampPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, Math.round(number * 100) / 100));
+}
+
+function normalizeEditorRect(rect = {}) {
+  const width = clampRoomSize(rect.width ?? 16);
+  const height = clampRoomSize(rect.height ?? 12);
+  const left = clampRoomEdge(rect.left, width);
+  const top = clampRoomEdge(rect.top, height);
+  return {
+    left,
+    top,
+    width,
+    height,
+    centerX: clampPercent(left + width / 2),
+    centerY: clampPercent(top + height / 2),
+  };
+}
+
+function clampRoomSize(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return MIN_ROOM_RECT_SIZE;
+  return Math.max(MIN_ROOM_RECT_SIZE, Math.min(100, Math.round(number * 100) / 100));
+}
+
+function clampRoomEdge(value, size) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100 - size, Math.round(number * 100) / 100));
+}
+
+function editorRectToSceneRoom(rect, bounds) {
+  const normalized = normalizeEditorRect(rect);
+  return {
+    x: roundPoint(bounds.minX + ((normalized.left + normalized.width / 2) / 100) * bounds.width),
+    z: roundPoint(bounds.minZ + ((normalized.top + normalized.height / 2) / 100) * bounds.depth),
+    width: roundPoint(Math.max(0.35, (normalized.width / 100) * bounds.width)),
+    depth: roundPoint(Math.max(0.35, (normalized.height / 100) * bounds.depth)),
+  };
+}
+
+function defaultCustomRoomRect(index = 0) {
+  const offset = (index % 5) * 3;
+  return normalizeEditorRect({ left: 38 + offset, top: 34 + offset, width: 18, height: 14 });
+}
+
+function uniqueSpatialRoomId(seed, state) {
+  const existingIds = new Set([
+    ...Object.keys(state.roomNames ?? {}),
+    ...Object.keys(state.roomRects ?? {}),
+    ...(state.customRooms ?? []).map((room) => room.id),
+  ]);
+  const base = String(seed ?? "").trim() || `custom_room_${Date.now().toString(36)}`;
+  if (!existingIds.has(base)) return base;
+  let index = 2;
+  while (existingIds.has(`${base}_${index}`)) index += 1;
+  return `${base}_${index}`;
 }
 
 function roundPoint(value) {

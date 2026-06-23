@@ -1831,10 +1831,25 @@ button {
   cursor: pointer;
 }
 
+.spatial-editor.workspace .spatial-room-zone {
+  cursor: move;
+}
+
 .spatial-room-zone:hover,
 .spatial-room-zone.selected {
   border-color: rgba(22, 143, 131, 0.68);
   background: rgba(229, 244, 240, 0.62);
+}
+
+.spatial-room-zone.customized {
+  border-style: dashed;
+}
+
+.spatial-room-zone.editing {
+  z-index: 2;
+  border-color: rgba(215, 160, 68, 0.76);
+  background: rgba(255, 247, 220, 0.62);
+  box-shadow: 0 0 0 4px rgba(215, 160, 68, 0.12);
 }
 
 .spatial-room-zone span {
@@ -1845,6 +1860,19 @@ button {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.room-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 8px 0 5px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(22, 143, 131, 0.72) 46% 55%, transparent 56%),
+    linear-gradient(135deg, transparent 0 65%, rgba(22, 143, 131, 0.52) 66% 75%, transparent 76%);
+  cursor: nwse-resize;
 }
 
 .spatial-device-marker {
@@ -1863,6 +1891,14 @@ button {
   transform: translate(-50%, -50%);
 }
 
+.spatial-editor.workspace .spatial-device-marker {
+  cursor: grab;
+}
+
+.spatial-editor.workspace .spatial-device-marker:active {
+  cursor: grabbing;
+}
+
 .spatial-device-marker.role-physical_controller {
   background: var(--amber);
 }
@@ -1878,6 +1914,50 @@ button {
   outline: 3px solid rgba(37, 141, 102, 0.2);
 }
 
+.spatial-room-detail {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.spatial-room-detail-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.spatial-room-detail-header svg {
+  color: var(--cyan);
+}
+
+.spatial-room-detail-header strong,
+.spatial-room-detail-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spatial-room-detail-header strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.spatial-room-detail-header span {
+  padding: 3px 6px;
+  border: 1px solid rgba(69, 111, 104, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  background: rgba(224, 238, 233, 0.28);
+}
+
 .room-name-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1885,14 +1965,16 @@ button {
 }
 
 .room-name-grid label,
-.spatial-detail-grid label {
+.spatial-detail-grid label,
+.spatial-rect-grid label {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
 .room-name-grid span,
-.spatial-detail-grid span {
+.spatial-detail-grid span,
+.spatial-rect-grid span {
   overflow: hidden;
   color: var(--muted);
   font-size: 10px;
@@ -1903,7 +1985,8 @@ button {
 
 .room-name-grid input,
 .spatial-detail-grid input,
-.spatial-detail-grid select {
+.spatial-detail-grid select,
+.spatial-rect-grid input {
   min-width: 0;
   height: 30px;
   padding: 0 8px;
@@ -1917,9 +2000,21 @@ button {
 
 .room-name-grid input:focus,
 .spatial-detail-grid input:focus,
-.spatial-detail-grid select:focus {
+.spatial-detail-grid select:focus,
+.spatial-rect-grid input:focus {
   border-color: rgba(22, 143, 131, 0.54);
   box-shadow: 0 0 0 3px rgba(22, 143, 131, 0.09);
+}
+
+.spatial-detail-grid input[readonly] {
+  color: var(--muted);
+  background: rgba(224, 238, 233, 0.18);
+}
+
+.spatial-rect-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .naming-toggle {
@@ -2094,6 +2189,10 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.spatial-detail-actions.single-action {
+  grid-template-columns: 1fr;
 }
 
 .spatial-detail-actions button {
@@ -2563,6 +2662,7 @@ button {
   .sensor-grid,
   .room-name-grid,
   .spatial-detail-grid,
+  .spatial-rect-grid,
   .spatial-stats {
     grid-template-columns: 1fr;
   }

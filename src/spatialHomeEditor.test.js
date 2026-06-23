@@ -3,6 +3,7 @@ import { createHcmHome } from "./hcm.js";
 import { attachHcmControlGraph } from "./hcmControlGraph.js";
 import { createHouseSceneModel } from "./houseSceneModel.js";
 import {
+  addSpatialRoom,
   assignSpatialDevice,
   applySpatialEditorToScene,
   applySpatialSuggestion,
@@ -10,9 +11,12 @@ import {
   createSpatialEditorModel,
   createSpatialEditorState,
   dismissSpatialSuggestion,
+  findSpatialRoomAtPoint,
   NAMING_MODES,
   placeSpatialDevice,
+  removeSpatialRoom,
   SPATIAL_DEVICE_STATUS,
+  updateSpatialRoomRect,
   updateSpatialDeviceName,
   updateSpatialRoomName,
 } from "./spatialHomeEditor.js";
@@ -129,6 +133,80 @@ describe("spatial home editor", () => {
     state = clearSpatialPlacement(state, "desk_light");
     model = createSpatialEditorModel({ sceneModel, state });
     expect(model.devices[0].spatialStatus).toBe(SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED);
+  });
+
+  it("uses edited room rectangles for placement suggestions and 3D projection", () => {
+    const sceneModel = {
+      source: "test",
+      rooms: [
+        { id: "study", name: "书房", x: 0, z: 0, width: 2, depth: 2 },
+        { id: "living", name: "客厅", x: 4, z: 0, width: 2, depth: 2 },
+      ],
+      devices: [{ id: "desk_light", name: "台灯", type: "light", roomId: "study", sceneX: 0, sceneZ: 0 }],
+    };
+    const state = updateSpatialRoomRect(createSpatialEditorState(), "study", {
+      left: 50,
+      top: 25,
+      width: 30,
+      height: 20,
+    });
+
+    const model = createSpatialEditorModel({ sceneModel, state });
+    const study = model.rooms.find((room) => room.id === "study");
+    const suggestion = model.suggestions.find((item) => item.deviceId === "desk_light");
+    const projected = applySpatialEditorToScene(sceneModel, model);
+
+    expect(study).toMatchObject({
+      mapRect: { left: 50, top: 25, width: 30, height: 20, centerX: 65, centerY: 35 },
+      spatialSource: "editor",
+    });
+    expect(suggestion.patch.placement).toMatchObject({ x: 65, y: 35 });
+    expect(projected.rooms.find((room) => room.id === "study")).toMatchObject({
+      x: 2.9,
+      z: -0.3,
+      width: 1.8,
+      depth: 0.4,
+      spatialSource: "editor",
+    });
+  });
+
+  it("adds custom rooms and can assign devices by point containment", () => {
+    const sceneModel = {
+      source: "test",
+      rooms: [{ id: "living", name: "客厅", x: 0, z: 0, width: 4, depth: 3 }],
+      devices: [{ id: "new_light", name: "新灯", type: "light", roomId: null }],
+    };
+    let state = addSpatialRoom(createSpatialEditorState(), {
+      id: "tea_room",
+      name: "茶室",
+      mapRect: { left: 60, top: 20, width: 18, height: 16 },
+    });
+    let model = createSpatialEditorModel({ sceneModel, state });
+    const room = findSpatialRoomAtPoint(model.rooms, 65, 25);
+
+    expect(room).toMatchObject({ id: "tea_room", custom: true, editorName: "茶室" });
+
+    state = placeSpatialDevice(state, "new_light", { x: 65, y: 25, roomId: room.id });
+    model = createSpatialEditorModel({ sceneModel, state });
+    const projected = applySpatialEditorToScene(sceneModel, model);
+
+    expect(model.devices.find((device) => device.id === "new_light")).toMatchObject({
+      assignedRoomId: "tea_room",
+      spatialStatus: SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED,
+    });
+    expect(projected.rooms.find((item) => item.id === "tea_room")).toMatchObject({
+      name: "茶室",
+      spatialSource: "editor",
+      deviceCount: 1,
+    });
+
+    state = removeSpatialRoom(state, "tea_room");
+    model = createSpatialEditorModel({ sceneModel, state });
+    expect(model.rooms.some((item) => item.id === "tea_room")).toBe(false);
+    expect(model.devices.find((device) => device.id === "new_light")).toMatchObject({
+      assignedRoomId: null,
+      spatialStatus: SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED,
+    });
   });
 
   it("applies custom room names and naming modes", () => {

@@ -17,6 +17,7 @@ import {
   MousePointer2,
   Network,
   Pencil,
+  Plus,
   Play,
   Power,
   RefreshCw,
@@ -35,6 +36,7 @@ import { applyDigitalTwinLayersToScene, buildDigitalTwinLayers } from "./digital
 import { planCommand } from "./commandPipeline.js";
 import { createHouseSceneModel, getSceneRoomName } from "./houseSceneModel.js";
 import {
+  addSpatialRoom,
   assignSpatialDevice,
   applySpatialEditorToScene,
   applySpatialSuggestion,
@@ -42,10 +44,13 @@ import {
   createSpatialEditorModel,
   createSpatialEditorState,
   dismissSpatialSuggestion,
+  findSpatialRoomAtPoint,
   NAMING_MODES,
   placeSpatialDevice,
+  removeSpatialRoom,
   SPATIAL_DEVICE_STATUS,
   updateSpatialDeviceName,
+  updateSpatialRoomRect,
   updateSpatialRoomName,
 } from "./spatialHomeEditor.js";
 import {
@@ -84,8 +89,8 @@ import {
 } from "./simulator.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.19";
-const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = ["harness-house.spatial-editor.v0.18B"];
+const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.20";
+const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = ["harness-house.spatial-editor.v0.19", "harness-house.spatial-editor.v0.18B"];
 const APP_VIEWS = {
   CONTROL: "control",
   MAP_EDITOR: "map-editor",
@@ -151,6 +156,19 @@ function formatFileSize(size) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
+function clampRoomRectForMap(rect) {
+  const width = Math.max(4, Math.min(100, Number(rect.width) || 4));
+  const height = Math.max(4, Math.min(100, Number(rect.height) || 4));
+  const left = Math.max(0, Math.min(100 - width, Number(rect.left) || 0));
+  const top = Math.max(0, Math.min(100 - height, Number(rect.top) || 0));
+  return {
+    left: Math.round(left * 100) / 100,
+    top: Math.round(top * 100) / 100,
+    width: Math.round(width * 100) / 100,
+    height: Math.round(height * 100) / 100,
+  };
 }
 
 function conciseChatText(text) {
@@ -1357,12 +1375,23 @@ function executableCapabilityCount(thing) {
 function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom, workspace = false }) {
   const mapRef = useRef(null);
   const fileInputRef = useRef(null);
+  const stateRef = useRef(state);
+  const activeRoomEditRef = useRef(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [activeRoomEditKey, setActiveRoomEditKey] = useState(null);
   const [floorPlanDragActive, setFloorPlanDragActive] = useState(false);
   const selectedDevice = useMemo(
     () => (selectedDeviceId ? model.devices.find((device) => device.id === selectedDeviceId) ?? null : null),
     [model.devices, selectedDeviceId],
   );
+  const selectedRoom = useMemo(
+    () => model.rooms.find((room) => room.id === selectedRoomId) ?? null,
+    [model.rooms, selectedRoomId],
+  );
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (selectedDeviceId && !model.devices.some((device) => device.id === selectedDeviceId)) {
@@ -1376,6 +1405,42 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
     },
     [onStateChange],
   );
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const interaction = activeRoomEditRef.current;
+      if (!interaction) return;
+      event.preventDefault();
+      const dx = ((event.clientX - interaction.clientX) / interaction.mapWidth) * 100;
+      const dy = ((event.clientY - interaction.clientY) / interaction.mapHeight) * 100;
+      const start = interaction.rect;
+      const nextRect =
+        interaction.mode === "resize"
+          ? clampRoomRectForMap({
+              ...start,
+              width: start.width + dx,
+              height: start.height + dy,
+            })
+          : clampRoomRectForMap({
+              ...start,
+              left: start.left + dx,
+              top: start.top + dy,
+            });
+      updateState(updateSpatialRoomRect(stateRef.current, interaction.roomId, nextRect));
+    };
+    const handlePointerUp = () => {
+      activeRoomEditRef.current = null;
+      setActiveRoomEditKey(null);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [updateState]);
 
   const readFloorPlanFile = useCallback(
     (file) => {
@@ -1405,6 +1470,57 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
     [readFloorPlanFile],
   );
 
+  const handleAddRoom = useCallback(() => {
+    const nextIndex = state.customRooms.length + 1;
+    const nextState = addSpatialRoom(state, {
+      id: `custom_room_${Date.now().toString(36)}`,
+      name: `新房间${nextIndex}`,
+      mapRect: { left: 38 + ((nextIndex - 1) % 4) * 4, top: 34 + ((nextIndex - 1) % 4) * 4, width: 18, height: 14 },
+    });
+    updateState(nextState);
+    const room = nextState.customRooms[nextState.customRooms.length - 1];
+    if (room?.id) onSelectRoom(room.id);
+  }, [onSelectRoom, state, updateState]);
+
+  const handleRemoveRoom = useCallback(
+    (roomId) => {
+      updateState(removeSpatialRoom(state, roomId));
+      if (selectedRoomId === roomId) onSelectRoom(model.rooms[0]?.id ?? null);
+    },
+    [model.rooms, onSelectRoom, selectedRoomId, state, updateState],
+  );
+
+  const handleRoomRectInput = useCallback(
+    (roomId, key, value) => {
+      const room = model.rooms.find((item) => item.id === roomId);
+      if (!room?.mapRect) return;
+      updateState(updateSpatialRoomRect(state, roomId, { ...room.mapRect, [key]: Number(value) }));
+    },
+    [model.rooms, state, updateState],
+  );
+
+  const handleRoomPointerDown = useCallback(
+    (event, room, mode = "move") => {
+      if (!workspace || event.button !== 0 || !room?.mapRect) return;
+      const mapRect = mapRef.current?.getBoundingClientRect();
+      if (!mapRect) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activeRoomEditRef.current = {
+        roomId: room.id,
+        mode,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        mapWidth: Math.max(1, mapRect.width),
+        mapHeight: Math.max(1, mapRect.height),
+        rect: clampRoomRectForMap(room.mapRect),
+      };
+      setActiveRoomEditKey(`${room.id}:${mode}`);
+      onSelectRoom(room.id);
+    },
+    [onSelectRoom, workspace],
+  );
+
   const handleDrop = useCallback(
     (event, roomId = null) => {
       event.preventDefault();
@@ -1419,11 +1535,12 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
       if (!deviceId || !rect) return;
       const x = ((event.clientX - rect.left) / rect.width) * 100;
       const y = ((event.clientY - rect.top) / rect.height) * 100;
-      updateState(placeSpatialDevice(state, deviceId, { x, y, roomId }));
+      const targetRoomId = roomId || findSpatialRoomAtPoint(model.rooms, x, y)?.id || null;
+      updateState(placeSpatialDevice(state, deviceId, { x, y, roomId: targetRoomId }));
       setSelectedDeviceId(deviceId);
-      if (roomId) onSelectRoom(roomId);
+      if (targetRoomId) onSelectRoom(targetRoomId);
     },
-    [onSelectRoom, readFloorPlanFile, state, updateState],
+    [model.rooms, onSelectRoom, readFloorPlanFile, state, updateState],
   );
 
   const handleMapDragOver = useCallback((event) => {
@@ -1507,6 +1624,11 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
       <div className="panel-title">
         <MapIcon size={17} />
         <h2>{workspace ? "房屋结构编辑器" : "Spatial Model"}</h2>
+        {workspace && (
+          <button className="mini-icon-button" type="button" onClick={handleAddRoom} title="新增房间">
+            <Plus size={13} />
+          </button>
+        )}
         <button
           className="mini-icon-button"
           type="button"
@@ -1559,7 +1681,12 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
             )}
             {model.rooms.map((room) => (
               <button
-                className={room.id === selectedRoomId ? "spatial-room-zone selected" : "spatial-room-zone"}
+                className={[
+                  "spatial-room-zone",
+                  room.id === selectedRoomId ? "selected" : "",
+                  activeRoomEditKey?.startsWith(`${room.id}:`) ? "editing" : "",
+                  room.spatialSource === "editor" ? "customized" : "",
+                ].filter(Boolean).join(" ")}
                 key={room.id}
                 type="button"
                 style={room.mapRect ? {
@@ -1569,11 +1696,19 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
                   height: `${room.mapRect.height}%`,
                 } : undefined}
                 onClick={() => onSelectRoom(room.id)}
+                onPointerDown={(event) => handleRoomPointerDown(event, room, "move")}
                 onDragOver={handleMapDragOver}
                 onDrop={(event) => handleDrop(event, room.id)}
                 title={room.editorName}
               >
                 <span>{room.editorName}</span>
+                {workspace && (
+                  <span
+                    className="room-resize-handle"
+                    onPointerDown={(event) => handleRoomPointerDown(event, room, "resize")}
+                    title="缩放房间"
+                  />
+                )}
               </button>
             ))}
             {markers.map(({ device, x, y, ghost }) => (
@@ -1586,7 +1721,9 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
                 ].filter(Boolean).join(" ")}
                 key={`${device.id}:${ghost ? "ghost" : "placed"}`}
                 type="button"
+                draggable={!ghost}
                 style={{ left: `${x}%`, top: `${y}%` }}
+                onDragStart={(event) => handleDeviceDrag(event, device.id)}
                 onClick={() => handleSelectDevice(device)}
                 title={device.displayName}
               >
@@ -1608,6 +1745,13 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
               待归房 <strong>{stats[SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED] ?? 0}</strong>
             </span>
           </div>
+
+          <SpatialRoomDetail
+            room={selectedRoom}
+            onRename={(roomId, value) => updateState(updateSpatialRoomName(state, roomId, value))}
+            onRectChange={handleRoomRectInput}
+            onRemove={handleRemoveRoom}
+          />
 
           <SpatialSuggestions
             suggestions={model.suggestions}
@@ -1663,6 +1807,56 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
         </div>
       </div>
     </section>
+  );
+}
+
+function SpatialRoomDetail({ room, onRename, onRectChange, onRemove }) {
+  if (!room) return null;
+  const rect = room.mapRect ?? { left: 0, top: 0, width: 10, height: 10 };
+  return (
+    <div className="spatial-room-detail">
+      <div className="spatial-room-detail-header">
+        <Home size={13} />
+        <strong>{room.editorName}</strong>
+        <span>{room.custom ? "自定义" : room.spatialSource === "editor" ? "已校准" : "系统"}</span>
+      </div>
+      <div className="spatial-detail-grid">
+        <label>
+          <span>房间名</span>
+          <input value={room.editorName} onChange={(event) => onRename(room.id, event.target.value)} />
+        </label>
+        <label>
+          <span>类型</span>
+          <input value={room.type ?? "generic"} readOnly />
+        </label>
+      </div>
+      <div className="spatial-rect-grid">
+        {[
+          ["left", "X"],
+          ["top", "Y"],
+          ["width", "W"],
+          ["height", "H"],
+        ].map(([key, label]) => (
+          <label key={key}>
+            <span>{label}</span>
+            <input
+              type="number"
+              min={key === "width" || key === "height" ? 4 : 0}
+              max={100}
+              step={0.5}
+              value={rect[key]}
+              onChange={(event) => onRectChange(room.id, key, event.target.value)}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="spatial-detail-actions single-action">
+        <button type="button" onClick={() => onRemove(room.id)} disabled={!room.custom}>
+          <Trash2 size={12} />
+          删除房间
+        </button>
+      </div>
+    </div>
   );
 }
 
