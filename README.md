@@ -4,7 +4,7 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.18.1`
+当前进度：`v0.18.2`
 
 当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
 
@@ -17,8 +17,9 @@ Provider Raw Graph
   -> Provider Adapter
   -> Harness Capability Model
   -> HCM Control Graph (Controller / Endpoint / Asset / Space)
-  -> Conversation Target + Group / Knowledge Resolver
+  -> Conversation Target/Room + Group / Knowledge Resolver
   -> LLM Planner
+  -> Preference / Comfort Resolver
   -> Intent Accuracy Engine
   -> Safety Gate
   -> Policy Gate
@@ -38,6 +39,7 @@ Provider Raw Graph
 - 主链路目标是 2 秒左右返回结果，长耗时设备不要求 2 秒内物理完成。
 - 控制请求解析失败时不能伪装成状态查询成功。
 - 集合控制要么覆盖全部可靠成员，要么不执行并明确缺失映射。
+- 偏好反馈不能被误执行；“还是暗”这类体感反馈要寻找实际补救方案。
 
 ## Current Capabilities
 
@@ -84,11 +86,19 @@ Provider Raw Graph
 ### Intent And Control Closed Loop
 
 - `关一下` 等省略指令使用会话中上一轮经过审计的逻辑目标；目标漂移会被拦截。
+- `书房灯开着吗` 等房间级灯光问题返回聚合状态，不把会话随意绑定到某一盏灯。
 - `客厅有几个射灯` 等知识查询由 HCM 本地聚合，模型不能编造数量。
 - `过道射灯关一下` 会展开编号集合；`还有一个没关` 只选择状态仍未满足的成员。
 - 直接继电器是主执行器，`绑定（设备）` 作为独立远程关系进入 review。
 - provider service 成功后必须回读状态，未收敛不能标记为执行成功。
 - 设计见 [docs/INTENT_CONTROL_CLOSED_LOOP.md](docs/INTENT_CONTROL_CLOSED_LOOP.md)。
+
+### Lighting Preference Loop
+
+- `建议默认开射灯，如果还是暗再开吊灯` 等话术会作为偏好反馈记录，不触发真实设备控制。
+- 模糊开灯按可解释顺序选择：射灯、台灯、灯带、吊灯/主灯。
+- `还是有点暗` 会优先打开同房间仍关闭的其他灯，而不是重复打开已经开启的回路。
+- 聊天回复优先展示自然语言短句，详细 service / safety / readback 留在解释和审计里。
 
 ### Safety & Debugging
 

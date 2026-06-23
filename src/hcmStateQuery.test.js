@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
-import { answerHcmStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
+import { attachHcmControlGraph } from "./hcmControlGraph.js";
+import { answerHcmRoomLightStateQuery, answerHcmStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
 
 function createStateHome() {
   return createHcmHome({
@@ -49,6 +50,37 @@ function createStateHome() {
   });
 }
 
+function control(id, name, entityId, state = false) {
+  return {
+    id,
+    name,
+    kind: "control",
+    valueType: "boolean",
+    state,
+    policy: { risk: "low", confirmation: "never", autoExecutable: true },
+    binding: { provider: "home_assistant", domain: "switch", entityId },
+  };
+}
+
+function createStudyLightHome() {
+  return attachHcmControlGraph(createHcmHome({
+    provider: { id: "home_assistant", name: "Home Assistant" },
+    spaces: [{ id: "study", name: "书房" }],
+    things: [
+      {
+        id: "study_panel",
+        name: "书房开关",
+        type: "switch_panel",
+        spaceId: "study",
+        capabilities: [
+          control("study_spot", "书房射灯 开关中键", "switch.study_spot", true),
+          control("study_ceiling", "书房吊灯 开关左键", "switch.study_ceiling", false),
+        ],
+      },
+    ],
+  }));
+}
+
 describe("HCM state query", () => {
   it("recognizes read-only state questions", () => {
     expect(looksLikeStateQuery("玄关人体目前是什么状态")).toBe(true);
@@ -67,5 +99,18 @@ describe("HCM state query", () => {
     expect(answer.summary).toContain("玄关的入户传感器");
     expect(answer.summary).toContain("无移动持续 5 分钟");
     expect(answer.summary).toContain("电量 80%");
+  });
+
+  it("answers room-level light state questions as an aggregate", () => {
+    const answer = answerHcmRoomLightStateQuery("书房灯开着吗", createStudyLightHome(), "查询书房灯光");
+
+    expect(answer).toMatchObject({
+      path: "hcm-room-light-state",
+      thingId: null,
+      thingName: "书房灯光",
+      roomId: "study",
+    });
+    expect(answer.summary).toContain("书房射灯开");
+    expect(answer.summary).toContain("书房吊灯关");
   });
 });

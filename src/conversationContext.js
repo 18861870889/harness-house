@@ -18,8 +18,9 @@ export function createConversationContextStore({ now = () => Date.now(), ttlMs =
     },
     record(sessionId, { input, plan, execution } = {}) {
       if (!sessionId || !input || !plan) return emptyContext();
-      const current = sessions.get(sessionId) ?? { turns: [], focusedTargets: [], updatedAt: now() };
+      const current = sessions.get(sessionId) ?? { turns: [], focusedTargets: [], focusedRooms: [], updatedAt: now() };
       const targets = targetsFromPlan(plan);
+      const rooms = roomsFromPlan(plan, targets);
       const successful = ["answered", "executed", "dry_run"].includes(execution?.status);
       const turn = {
         input,
@@ -28,9 +29,14 @@ export function createConversationContextStore({ now = () => Date.now(), ttlMs =
         status: execution?.status ?? "unknown",
         targetIds: targets.map((target) => target.id),
         targetNames: targets.map((target) => target.name),
+        roomIds: rooms.map((room) => room.id),
       };
       current.turns = [...current.turns, turn].slice(-MAX_TURNS);
-      if (successful && targets.length > 0) current.focusedTargets = targets;
+      if (successful) {
+        if (targets.length > 0) current.focusedTargets = targets;
+        else if (rooms.length > 0) current.focusedTargets = [];
+        if (rooms.length > 0) current.focusedRooms = rooms;
+      }
       current.updatedAt = now();
       sessions.set(sessionId, current);
       return compactContext(current);
@@ -66,12 +72,13 @@ function compactContext(session) {
   return {
     version: CONVERSATION_CONTEXT_VERSION,
     focusedTargets: session.focusedTargets.map((target) => ({ ...target })),
+    focusedRooms: (session.focusedRooms ?? []).map((room) => ({ ...room })),
     recentTurns: session.turns.map((turn) => ({ ...turn })),
   };
 }
 
 function emptyContext() {
-  return { version: CONVERSATION_CONTEXT_VERSION, focusedTargets: [], recentTurns: [] };
+  return { version: CONVERSATION_CONTEXT_VERSION, focusedTargets: [], focusedRooms: [], recentTurns: [] };
 }
 
 function dedupeTargets(targets) {
@@ -79,6 +86,27 @@ function dedupeTargets(targets) {
   return targets.filter((target) => {
     if (!target.id || seen.has(target.id)) return false;
     seen.add(target.id);
+    return true;
+  });
+}
+
+function roomsFromPlan(plan, targets = []) {
+  const rooms = [];
+  if (plan.stateQuery?.roomId) rooms.push({ id: plan.stateQuery.roomId, name: plan.stateQuery.roomName });
+  for (const target of targets) {
+    if (target.roomId) rooms.push({ id: target.roomId });
+  }
+  for (const action of plan.actions ?? []) {
+    if (action.logicalRoomId) rooms.push({ id: action.logicalRoomId });
+  }
+  return dedupeRooms(rooms);
+}
+
+function dedupeRooms(rooms) {
+  const seen = new Set();
+  return rooms.filter((room) => {
+    if (!room.id || seen.has(room.id)) return false;
+    seen.add(room.id);
     return true;
   });
 }

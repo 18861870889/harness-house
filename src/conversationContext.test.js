@@ -36,4 +36,21 @@ describe("conversation context", () => {
 
     expect(store.get("session-1").focusedTargets[0].id).toBe("dining");
   });
+
+  it("keeps room focus for room-level state queries without pinning one lamp", () => {
+    const store = createConversationContextStore();
+    store.record("session-1", {
+      input: "书房灯开着吗",
+      plan: {
+        intent: "query_study_lights",
+        intentType: "state_query",
+        stateQuery: { thingId: null, thingName: "书房灯光", roomId: "study", roomName: "书房" },
+        actions: [],
+      },
+      execution: { status: "answered" },
+    });
+
+    expect(store.get("session-1").focusedTargets).toEqual([]);
+    expect(store.get("session-1").focusedRooms).toEqual([{ id: "study", name: "书房" }]);
+  });
 });

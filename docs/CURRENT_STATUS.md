@@ -1,10 +1,10 @@
 # Current Status
 
-> Last updated: 2026-06-22. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
+> Last updated: 2026-06-23. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
 
 ## Current Version
 
-Current engineering progress: `v0.18.1`.
+Current engineering progress: `v0.18.2`.
 
 Completed major runtime capabilities:
 
@@ -91,6 +91,17 @@ Status: implemented and validated with the real HA snapshot using read-only quer
 - Successful execution now requires provider state convergence.
 
 Design: [INTENT_CONTROL_CLOSED_LOOP.md](INTENT_CONTROL_CLOSED_LOOP.md).
+
+## v0.18.2 Lighting Preference Loop
+
+Status: implemented and covered by automated tests. Validation uses unit tests and dry-run/read-only runtime checks; no automatic real-device control is used for debugging.
+
+- Room-level light questions such as `书房灯开着吗` return aggregate room lighting state instead of pinning one lamp.
+- Conversation context now tracks focused rooms as well as focused targets, so short follow-ups can inherit the previous room safely.
+- Preference feedback such as `建议默认开射灯，如果还是暗再开吊灯` is treated as learning input and never as a real device command.
+- Ambiguous light turn-on requests prefer the household lighting order: `射灯 -> 台灯 -> 灯带 -> 吊灯/主灯`.
+- Brightness discomfort such as `还是有点暗` seeks a brighter outcome by opening another currently-off light in the same room before repeating an already-on relay.
+- The chat surface now prefers a short human-readable result while retaining the detailed execution explanation in the plan/audit surfaces.
 
 ## Current Runtime Chain
 

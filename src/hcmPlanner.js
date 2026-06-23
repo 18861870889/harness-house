@@ -1,5 +1,5 @@
 import { CAPABILITY_KINDS, POLICY_LEVELS } from "./hcm.js";
-import { answerHcmThingStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
+import { answerHcmRoomLightStateQuery, answerHcmThingStateQuery, looksLikeStateQuery } from "./hcmStateQuery.js";
 import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
 import { isReferentialControlInput } from "./conversationContext.js";
 import { createIntentResolution, normalizeIntentType } from "./intentResolution.js";
@@ -7,10 +7,14 @@ import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./
 
 const CONTROL_REQUEST_PATTERN = /打开|开启|启动|关闭|关掉|停止|暂停|调到|设置|播放|清扫|没关|忘了关|还开着/;
 
-export function compileHcmForPlanner(home, { input = "", currentRoomId, selectedRoomId, focusTargetIds = [], limit = 80 } = {}) {
+export function compileHcmForPlanner(
+  home,
+  { input = "", currentRoomId, selectedRoomId, focusTargetIds = [], focusRoomIds = [], limit = 80 } = {},
+) {
   if (!home?.things) return [];
-  const preferredSpaces = new Set([currentRoomId, selectedRoomId].filter(Boolean));
+  const preferredSpaces = new Set([currentRoomId, selectedRoomId, ...focusRoomIds].filter(Boolean));
   const focusedTargets = new Set(focusTargetIds);
+  const focusedRooms = new Set(focusRoomIds);
   const explicitSpaces = new Set(findExplicitRoomIds(input, home));
   const graph = getHcmControlGraph(home);
   const mappedEntityIds = new Set(graph.endpoints.map((endpoint) => endpoint.entityId));
@@ -31,6 +35,8 @@ export function compileHcmForPlanner(home, { input = "", currentRoomId, selected
     candidates = candidates.filter((thing) => explicitSpaces.has(thing.roomId) || focusedTargets.has(thing.id));
   } else if (focusedTargets.size > 0 && isReferentialControlInput(input)) {
     candidates = candidates.filter((thing) => focusedTargets.has(thing.id));
+  } else if (focusedRooms.size > 0 && isReferentialControlInput(input)) {
+    candidates = candidates.filter((thing) => focusedRooms.has(thing.roomId));
   }
 
   return candidates
@@ -39,14 +45,19 @@ export function compileHcmForPlanner(home, { input = "", currentRoomId, selected
       if (focusDelta !== 0) return focusDelta;
       const spaceDelta = Number(preferredSpaces.has(second.roomId)) - Number(preferredSpaces.has(first.roomId));
       if (spaceDelta !== 0) return spaceDelta;
+      const lightingPreferenceDelta = preferredLightRank(first, input) - preferredLightRank(second, input);
+      if (lightingPreferenceDelta !== 0) return lightingPreferenceDelta;
       return second.capabilities.length - first.capabilities.length;
     })
     .slice(0, limit);
 }
 
 export function normalizeHcmPlannerDraft(input, draft, home) {
+  const preferencePlan = maybePreferenceFeedbackPlan(input, draft);
+  if (preferencePlan) return preferencePlan;
+
   const actions = Array.isArray(draft?.actions) ? draft.actions : [];
-  const normalizedActions = [];
+  let normalizedActions = [];
   const rejected = [];
   const requestedIntentType = normalizeIntentType(draft?.intent_type, [], null);
   const controlRequested = CONTROL_REQUEST_PATTERN.test(input) || ["device_control", "scene"].includes(requestedIntentType);
@@ -59,6 +70,7 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     }
     normalizedActions.push(toNormalizedAction(result, action));
   }
+  normalizedActions = applyLightingComfortPolicy(input, normalizedActions, home, rejected);
   if (normalizedActions.length === 0 && controlRequested) {
     normalizedActions.push(...resolveResidualGroupActions(input, home));
   }
@@ -68,9 +80,15 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const inventoryQuery = resolvedActions.length === 0 && !controlRequested && looksLikeInventoryQuery(input)
     ? answerHcmInventoryQuery(input, home, draft?.query?.reason)
     : null;
-  const stateQuery = resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
-    ? resolvePlannerStateQuery(input, draft, home, rejected)
-    : inventoryQuery;
+  const roomLightStateQuery =
+    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query"
+      ? answerHcmRoomLightStateQuery(input, home, draft?.query?.reason)
+      : null;
+  const stateQuery = roomLightStateQuery
+    ? roomLightStateQuery
+    : resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
+      ? resolvePlannerStateQuery(input, draft, home, rejected)
+      : inventoryQuery;
   const intentType = inventoryQuery
     ? "inventory_query"
     : controlRequested
@@ -105,10 +123,12 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     summary:
       stateQuery
         ? stateQuery.summary
-        : typeof draft?.summary === "string" && draft.summary.trim()
-          ? draft.summary.trim()
         : groupResolution.satisfied
           ? "目标集合已经处于期望状态，无需执行设备动作。"
+        : unresolvedControl && rejected.length > 0
+          ? `没有继续执行：${rejected.join("；")}。`
+        : typeof draft?.summary === "string" && draft.summary.trim()
+          ? draft.summary.trim()
         : resolvedActions.length > 0
           ? `准备执行 ${resolvedActions.length} 个真实设备动作。`
           : `没有找到可执行的真实设备动作。${rejected.join("；")}`,
@@ -135,7 +155,11 @@ export function buildHcmPlannerSystemPrompt() {
     "Every user command must be interpreted by you first, including read-only state questions.",
     "Use personal_semantics as hints for household phrases, but still output only valid HCM device ids and capability ids.",
     "Use conversation.focused_targets as the primary referent for short follow-ups such as 关一下, 打开它, or 也打开. Never replace that referent with the selected room.",
+    "Use conversation.focused_rooms for short follow-ups when the prior turn was a room-level query instead of a single device query.",
     "Prefer the user's selected/current room when the command is ambiguous.",
+    "If the user is giving advice, preference, correction, or a default rule such as 建议, 以后, 下次, 默认, 我希望, or 记住, set intent_type to preference and return no actions.",
+    "For ambiguous room light turn-on commands, prefer the household's learned/default light order instead of arbitrarily choosing a lamp.",
+    "For brightness discomfort such as 太暗 or 还是有点暗, seek a brighter result: turn on another currently-off light in the same room before repeating an already-on switch.",
     "roomId is the semantic location of the controlled object, not necessarily the physical controller location.",
     "When the user explicitly names a room, only choose devices with that exact roomId.",
     "A logical light may be backed by a multi-gang wall switch; target the logical light device, never guess a switch panel.",
@@ -437,6 +461,153 @@ function dedupeActions(actions) {
     seen.add(key);
     return true;
   });
+}
+
+function maybePreferenceFeedbackPlan(input, draft) {
+  if (!looksLikePreferenceFeedback(input, draft)) return null;
+  const summary = summarizePreferenceFeedback(input);
+  const intentType = "preference";
+  return {
+    id: crypto.randomUUID(),
+    kind: "hcm_preference_feedback",
+    input,
+    path: "hcm-real",
+    intent: typeof draft?.intent === "string" && draft.intent.trim() ? draft.intent.trim() : "记录家庭偏好",
+    intentType,
+    confidence: clampConfidence(draft?.confidence ?? 0.82),
+    summary,
+    needsConfirmation: false,
+    requiresClarification: false,
+    actions: [],
+    stateQuery: null,
+    groupResolution: { mode: "single", groups: [], unresolved: [], blocked: false },
+    resolution: createIntentResolution({
+      input,
+      draft: { ...draft, intent_type: intentType, intent: "记录家庭偏好", confidence: draft?.confidence ?? 0.82 },
+      intentType,
+      stateQuery: null,
+      actions: [],
+      rejected: [],
+    }),
+    preference: inferPreferenceFeedback(input),
+    rejected: [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function looksLikePreferenceFeedback(input, draft) {
+  const text = normalizeText(input);
+  if (normalizeIntentType(draft?.intent_type, [], null) === "preference") return true;
+  if (!/(建议|以后|下次|默认|优先|习惯|记住|我希望|我觉得|如果.*就)/.test(text)) return false;
+  if (!/(灯|照明|亮|暗|射灯|吊灯|灯带|台灯|主灯)/.test(text)) return false;
+  return /(默认|优先|先|再|如果|建议|以后|下次|记住)/.test(text);
+}
+
+function summarizePreferenceFeedback(input) {
+  const preference = inferPreferenceFeedback(input);
+  if (preference?.domain === "lighting" && preference.primary && preference.fallback) {
+    return `收到，我会把这条作为灯光偏好：模糊开灯优先选${preference.primary}；如果你说还是暗，再补开${preference.fallback}。这次不会操作设备。`;
+  }
+  if (preference?.domain === "lighting" && preference.primary) {
+    return `收到，我会把这条作为灯光偏好：模糊开灯优先选${preference.primary}。这次不会操作设备。`;
+  }
+  return "收到，我会把这条作为偏好反馈记录下来。这次不会操作设备。";
+}
+
+function inferPreferenceFeedback(input) {
+  const text = normalizeText(input);
+  const order = ["射灯", "台灯", "灯带", "吊灯", "主灯"].filter((name) => text.includes(name));
+  return {
+    domain: /灯|照明|亮|暗/.test(text) ? "lighting" : "general",
+    primary: order[0] ?? null,
+    fallback: /暗/.test(text) ? order[1] ?? null : null,
+    order,
+    source: "user_feedback",
+  };
+}
+
+function applyLightingComfortPolicy(input, actions, home, rejected = []) {
+  const text = normalizeText(input);
+  if (actions.length === 0) return actions;
+  if (looksLikeBrightnessBoost(text)) return resolveBrightnessBoostActions(input, actions, home, rejected);
+  if (looksLikeAmbiguousLightTurnOn(text)) return resolvePreferredLightTurnOn(input, actions, home) ?? actions;
+  return actions;
+}
+
+function looksLikeBrightnessBoost(text) {
+  return /暗|不够亮|亮一点|再亮点|调亮/.test(text) && !/(关闭|关掉|关一下|太亮)/.test(text);
+}
+
+function looksLikeAmbiguousLightTurnOn(text) {
+  if (!/(打开|开启|开一下|开灯|亮一点)/.test(text)) return false;
+  if (mentionsSpecificLightName(text)) return false;
+  return /灯|照明|开一下/.test(text);
+}
+
+function mentionsSpecificLightName(text) {
+  return /射灯|吊灯|灯带|台灯|主灯|壁灯|筒灯|吸顶灯|[0-9一二三四五六七八九十]+号灯/.test(text);
+}
+
+function resolvePreferredLightTurnOn(input, actions, home) {
+  const roomId = preferredRoomForLightPolicy(input, actions, home);
+  if (!roomId) return null;
+  const preferred = sortedRoomLightAssets(home, roomId)[0];
+  if (!preferred) return null;
+  const result = resolvePlannerAction(input, { device_id: preferred.id, capability: "power", value: true }, home);
+  if (!result.ok) return null;
+  return [toNormalizedAction(result, { value: true, reason: "模糊开灯使用灯光偏好顺序" })];
+}
+
+function resolveBrightnessBoostActions(input, actions, home, rejected) {
+  const roomId = preferredRoomForLightPolicy(input, actions, home);
+  if (!roomId) return actions;
+  const candidate = sortedRoomLightAssets(home, roomId).find((asset) => asset.state?.commandedState !== true);
+  if (!candidate) {
+    const roomName = home.spaces?.find((space) => space.id === roomId)?.name ?? roomId;
+    rejected.push(`${roomName}没有可继续打开的关闭灯光，也没有已确认的调光能力`);
+    return [];
+  }
+  const result = resolvePlannerAction(input, { device_id: candidate.id, capability: "power", value: true }, home);
+  if (!result.ok) {
+    rejected.push(result.message);
+    return [];
+  }
+  return [toNormalizedAction(result, { value: true, reason: "亮度补救：优先打开同房间仍关闭的灯" })];
+}
+
+function preferredRoomForLightPolicy(input, actions, home) {
+  const explicitRoomIds = findExplicitRoomIds(input, home);
+  if (explicitRoomIds.length === 1) return explicitRoomIds[0];
+  const actionRoomIds = Array.from(new Set(actions.map((action) => action.logicalRoomId).filter(Boolean)));
+  if (actionRoomIds.length === 1) return actionRoomIds[0];
+  return null;
+}
+
+function sortedRoomLightAssets(home, roomId) {
+  return getHcmControlGraph(home).assets
+    .filter((asset) => asset.spaceId === roomId && asset.type === "light")
+    .sort((first, second) => preferredLightNameRank(first.name) - preferredLightNameRank(second.name) || first.name.localeCompare(second.name, "zh-CN"));
+}
+
+function preferredLightRank(thing, input) {
+  const text = normalizeText(input);
+  if (!looksLikeAmbiguousLightTurnOn(text) && !looksLikeBrightnessBoost(text)) return 99;
+  if (thing?.type !== "light" && !thing?.logicalAsset) return 99;
+  return preferredLightNameRank(thing.name);
+}
+
+function preferredLightNameRank(name) {
+  const text = normalizeText(name);
+  if (/射灯/.test(text)) return 0;
+  if (/台灯/.test(text)) return 1;
+  if (/灯带/.test(text)) return 2;
+  if (/吊灯|主灯|吸顶灯/.test(text)) return 3;
+  if (/灯/.test(text)) return 4;
+  return 9;
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim().replace(/[，。！？,.!?\s]/g, "");
 }
 
 function compactThingState(thing) {

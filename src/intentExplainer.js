@@ -24,10 +24,13 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
   return {
     title: plan?.intentType === "inventory_query"
       ? "家庭知识查询"
+      : plan?.intentType === "preference"
+        ? "偏好反馈"
       : plan?.intentType === "state_query"
         ? "状态读取解释"
         : "执行计划解释",
     summary: lines.join("\n"),
+    userMessage: userMessage({ input, plan, execution, targetNames }),
     intent: {
       type: plan?.intentType ?? "unknown",
       name: plan?.intent ?? "unknown",
@@ -48,6 +51,29 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
       confidence: hint.candidates[0]?.confidence,
     })),
   };
+}
+
+function userMessage({ input, plan, execution, targetNames }) {
+  if (plan?.kind === "hcm_preference_feedback") return plan.summary;
+  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_state_query") return plan?.stateQuery?.summary || plan.summary;
+  if (execution?.status === "executed") {
+    const action = execution.accepted?.[0];
+    if (execution.accepted?.length === 1 && action?.thingName) {
+      const verb = action.value === false ? "关掉" : action.value === true ? "打开" : "调整";
+      return `已${verb}${action.thingName}。`;
+    }
+    if (targetNames.length > 0) return `已执行：${targetNames.join("、")}。`;
+  }
+  if (execution?.status === "dry_run") {
+    return `这是预览：会操作 ${targetNames.join("、") || plan?.intent || input}，不会控制真实设备。`;
+  }
+  if (execution?.status === "rejected") {
+    const reason = execution.rejected?.map((item) => item.message || item.code).filter(Boolean).join("；");
+    return reason ? `这次没有执行：${reason}。` : "这次没有执行，安全门拒绝了计划。";
+  }
+  if (execution?.status === "needs_clarification") return plan?.summary || "目标还不够明确，我没有操作设备。";
+  if (execution?.status === "no_action") return plan?.summary || "没有找到可执行动作，我没有操作设备。";
+  return plan?.summary || input || "已处理。";
 }
 
 function targetNamesFromPlan(plan) {

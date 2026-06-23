@@ -211,6 +211,7 @@ function summarizeExplanation(explanation) {
   return {
     title: explanation.title,
     summary: explanation.summary,
+    userMessage: explanation.userMessage,
     intent: explanation.intent,
     targets: explanation.targets ?? [],
     services: explanation.services ?? [],

@@ -607,8 +607,11 @@ export default function App() {
     const okCount = result.execution?.results?.filter((item) => item.ok && item.verification?.ok !== false).length ?? 0;
     const failCount = result.execution?.results?.filter((item) => !item.ok || item.verification?.ok === false).length ?? 0;
     const accepted = result.execution?.accepted ?? [];
+    const friendlyText = result.explanation?.userMessage;
     const logText =
-      result.status === "answered"
+      friendlyText
+        ? friendlyText
+        : result.status === "answered"
         ? result.plan?.stateQuery?.summary || result.plan?.summary || "状态已读取。"
         : result.status === "no_action"
           ? result.plan?.summary || "没有找到可执行动作。"

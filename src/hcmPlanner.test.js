@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
+import { attachHcmControlGraph } from "./hcmControlGraph.js";
 import { compileHcmForPlanner, normalizeHcmPlannerDraft } from "./hcmPlanner.js";
 
 function createPlannerHome() {
@@ -62,6 +63,47 @@ function createPlannerHome() {
   });
 }
 
+function control(id, name, entityId, state = false) {
+  return {
+    id,
+    name,
+    kind: "control",
+    valueType: "boolean",
+    state,
+    policy: { risk: "low", confirmation: "never", autoExecutable: true },
+    binding: { provider: "home_assistant", domain: "switch", entityId },
+  };
+}
+
+function createStudyPlannerHome({ spot = false, ceiling = false } = {}) {
+  return attachHcmControlGraph(createHcmHome({
+    provider: { id: "home_assistant", name: "Home Assistant" },
+    spaces: [
+      { id: "living", name: "客厅" },
+      { id: "study", name: "书房" },
+    ],
+    things: [
+      {
+        id: "study_panel",
+        name: "书房开关",
+        type: "switch_panel",
+        spaceId: "study",
+        capabilities: [
+          control("study_spot", "书房射灯 开关中键", "switch.study_spot", spot),
+          control("study_ceiling", "书房吊灯 开关左键", "switch.study_ceiling", ceiling),
+        ],
+      },
+      {
+        id: "living_panel",
+        name: "客厅开关",
+        type: "switch_panel",
+        spaceId: "living",
+        capabilities: [control("living_ceiling", "客厅吊灯 开关左键", "switch.living_ceiling", false)],
+      },
+    ],
+  }));
+}
+
 describe("hcm planner compiler", () => {
   it("exposes only auto executable HCM capabilities to the planner", () => {
     const devices = compileHcmForPlanner(createPlannerHome());
@@ -105,6 +147,16 @@ describe("hcm planner compiler", () => {
     });
 
     expect(devices.map((device) => device.id)).toEqual(["asset_living_客厅灯"]);
+  });
+
+  it("uses room focus for short follow-up prompts after room-level queries", () => {
+    const devices = compileHcmForPlanner(createStudyPlannerHome(), {
+      input: "开一下",
+      currentRoomId: "living",
+      focusRoomIds: ["study"],
+    });
+
+    expect(devices.map((device) => device.name)).toEqual(["书房射灯", "书房吊灯"]);
   });
 
   it("resolves a logical light back to its physical switch channel", () => {
@@ -216,6 +268,83 @@ describe("hcm planner compiler", () => {
     expect(plan.kind).toBe("hcm_inventory_query");
     expect(plan.stateQuery).toMatchObject({ mode: "count", count: 1, roomId: "living" });
     expect(plan.actions).toEqual([]);
+  });
+
+  it("treats preference feedback as learning input instead of a device command", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "建议默认开射灯，如果我觉得还是暗了就再开一下吊灯",
+      {
+        intent_type: "device_control",
+        intent: "建议默认开射灯",
+        confidence: 0.8,
+        actions: [{ device_id: "asset_study_书房射灯", capability: "power", value: true }],
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.kind).toBe("hcm_preference_feedback");
+    expect(plan.intentType).toBe("preference");
+    expect(plan.actions).toEqual([]);
+    expect(plan.summary).toContain("这次不会操作设备");
+  });
+
+  it("uses the lighting preference order for ambiguous room light turn-on", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "书房灯开一下",
+      {
+        intent_type: "device_control",
+        intent: "打开书房灯",
+        confidence: 0.9,
+        actions: [{ device_id: "asset_study_书房吊灯", capability: "power", value: true }],
+      },
+      createStudyPlannerHome(),
+    );
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({
+      logicalAssetName: "书房射灯",
+      capabilityId: "study_spot",
+      value: true,
+    });
+  });
+
+  it("opens another off light when the user says the room is still too dark", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "还是有点暗",
+      {
+        intent_type: "device_control",
+        intent: "调亮书房",
+        confidence: 0.86,
+        actions: [{ device_id: "asset_study_书房射灯", capability: "power", value: true }],
+      },
+      createStudyPlannerHome({ spot: true, ceiling: false }),
+    );
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({
+      logicalAssetName: "书房吊灯",
+      capabilityId: "study_ceiling",
+      value: true,
+    });
+  });
+
+  it("does not claim a brightness fix when every room light is already on", () => {
+    const plan = normalizeHcmPlannerDraft(
+      "还是有点暗",
+      {
+        intent_type: "device_control",
+        intent: "调亮书房",
+        confidence: 0.86,
+        summary: "打开书房吊灯",
+        actions: [{ device_id: "asset_study_书房吊灯", capability: "power", value: true }],
+      },
+      createStudyPlannerHome({ spot: true, ceiling: true }),
+    );
+
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.actions).toEqual([]);
+    expect(plan.summary).toContain("没有继续执行");
+    expect(plan.summary).toContain("没有可继续打开的关闭灯光");
   });
 
   it("never degrades a rejected control action into a state answer", () => {

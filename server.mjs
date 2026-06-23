@@ -758,6 +758,7 @@ async function runHcmCommandPipeline(payload) {
           currentRoomId: payload.currentRoomId,
           selectedRoomId: payload.selectedRoomId,
           focusTargetIds: conversation.focusedTargets.map((target) => target.id),
+          focusRoomIds: (conversation.focusedRooms ?? []).map((room) => room.id),
         }),
       {
         summarize: (devices) => ({
@@ -865,7 +866,7 @@ async function runHcmCommandPipeline(payload) {
       results: [],
     };
 
-    if (["hcm_state_query", "hcm_inventory_query"].includes(plan.kind)) {
+    if (["hcm_state_query", "hcm_inventory_query", "hcm_preference_feedback"].includes(plan.kind)) {
       execution.status = "answered";
     } else if (plan.requiresClarification || (plan.needsConfirmation && plan.actions.length === 0)) {
       execution.status = "needs_clarification";
@@ -1081,6 +1082,10 @@ function compactConversationContext(conversation) {
       id: target.id,
       name: target.name,
       room_id: target.roomId,
+    })),
+    focused_rooms: (conversation.focusedRooms ?? []).map((room) => ({
+      id: room.id,
+      name: room.name,
     })),
     recent_turns: (conversation.recentTurns ?? []).slice(-4),
   };

@@ -43,6 +43,35 @@ export function answerHcmStateQuery(input, home) {
   };
 }
 
+export function answerHcmRoomLightStateQuery(input, home, reason = "") {
+  const text = normalize(input);
+  if (!home?.things?.length || !looksLikeStateQuery(text) || !/灯|照明/.test(text)) return null;
+  const roomIds = requestedRooms(text, home.spaces ?? []);
+  if (roomIds.length !== 1) return null;
+
+  const roomId = roomIds[0];
+  const roomName = home.spaces?.find((space) => space.id === roomId)?.name ?? roomId;
+  const assets = getHcmControlGraph(home).assets
+    .filter((asset) => asset.spaceId === roomId && asset.type === "light")
+    .sort((first, second) => first.name.localeCompare(second.name, "zh-CN"));
+  if (assets.length < 2) return null;
+
+  const items = assets.map((asset) => answerHcmThingStateQuery(input, home, asset.id, reason)).filter(Boolean);
+  const itemSummary = items.map(formatRoomLightItem).join("；");
+  return {
+    path: "hcm-room-light-state",
+    mode: "room_light_state",
+    thingId: null,
+    thingName: `${roomName}灯光`,
+    roomId,
+    roomName,
+    available: items.some((item) => item.available),
+    items,
+    reason,
+    summary: `${roomName}灯光：${itemSummary || "暂时没有可读状态"}。状态来自开关回路，不能独立证明灯具实际发光。`,
+  };
+}
+
 export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
   const logical = resolveControlAsset(home, thingId);
   if (logical?.asset) return formatControlAssetState(logical, home, reason);
@@ -57,6 +86,12 @@ export function answerHcmThingStateQuery(input, home, thingId, reason = "") {
     reason,
     summary: formatThingState(thing, roomName),
   };
+}
+
+function formatRoomLightItem(item) {
+  if (item.state === true) return `${item.thingName}开`;
+  if (item.state === false) return `${item.thingName}关`;
+  return `${item.thingName}未知`;
 }
 
 function formatControlAssetState({ asset, endpoint, thing }, home, reason) {
@@ -253,4 +288,4 @@ function normalize(input) {
     .replace(/\s+/g, "")
     .replace(/[，。！？,.!?]/g, "");
 }
-import { resolveControlAsset } from "./hcmControlGraph.js";
+import { getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";

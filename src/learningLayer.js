@@ -61,6 +61,36 @@ export function deriveLearningCandidates(observations = [], existingCandidates =
   const existingByKey = new Map(existingCandidates.map((candidate) => [candidate.commandKey, candidate]));
   const tombstoneKeys = new Set(tombstones.map((item) => item.commandKey).filter(Boolean));
   for (const observation of observations) {
+    if (observation.intentType === "preference") {
+      const key = `preference:${normalizeCommandKey(observation.input)}`;
+      if (tombstoneKeys.has(key)) continue;
+      const existing = existingByKey.get(key);
+      const current = groups.get(key) ?? {
+        id: `candidate_${stableId(key)}`,
+        type: "preference_policy",
+        status: existing?.status ?? "shadow",
+        input: observation.input,
+        commandKey: key,
+        count: 0,
+        confidence: 0,
+        actions: [],
+        preference: observation.preference,
+        examples: [],
+        safety: {
+          level: "low",
+          autoApply: false,
+          reason: "偏好反馈默认仅 shadow，需要可解释策略确认后才自动生效",
+        },
+        note: existing?.note,
+        updatedAt: existing?.updatedAt,
+      };
+      current.count += 1;
+      current.confidence = Math.min(0.95, 0.5 + current.count * 0.18);
+      current.examples = [observation.input, ...current.examples.filter((item) => item !== observation.input)].slice(0, 3);
+      current.preference = observation.preference ?? current.preference;
+      groups.set(key, current);
+      continue;
+    }
     if (!observation.success || observation.actions.length === 0) continue;
     const key = normalizeCommandKey(observation.input);
     if (tombstoneKeys.has(key)) continue;
@@ -158,8 +188,10 @@ function createObservation(auditEntry, observedAt) {
     input: auditEntry.input,
     path: auditEntry.path,
     status: auditEntry.status,
+    intentType: auditEntry.plan?.intentType,
     success,
     actions,
+    preference: auditEntry.plan?.preference,
     safety: auditEntry.safety,
     explanation: auditEntry.explanation?.summary,
     rejected: auditEntry.execution?.rejectedCount ?? auditEntry.safety?.rejectedCount ?? 0,

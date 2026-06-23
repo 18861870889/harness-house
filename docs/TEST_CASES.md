@@ -173,7 +173,26 @@
 - `src/providerExecutionRuntime.test.js`
 - `src/intentAccuracyEngine.test.js`
 
-## 14. 自动化测试入口
+## 14. Lighting Preference And Comfort
+
+必须覆盖：
+
+- `书房灯开着吗` 返回房间灯光聚合状态，例如射灯/吊灯分别开关，不把会话焦点固定到随机单灯。
+- 房间级状态查询后的 `开一下` 继承上一轮房间焦点。
+- `建议默认开射灯，如果我觉得还是暗了就再开一下吊灯` 进入 preference/shadow learning，不执行真实设备。
+- `书房灯开一下` 这类模糊开灯优先选择 `射灯`，除非用户明确点名其他灯。
+- `还是有点暗` 在同房间寻找仍关闭的其他灯并打开；不能重复打开已经开启的同一回路。
+- 面向用户的回复使用自然语言短句，详细服务调用保留在 explanation/audit。
+
+核心测试：
+
+- `src/conversationContext.test.js`
+- `src/hcmStateQuery.test.js`
+- `src/hcmPlanner.test.js`
+- `src/learningLayer.test.js`
+- `src/intentExplainer.test.js`
+
+## 15. 自动化测试入口
 
 核心场景 benchmark 位于：
 
