@@ -1074,6 +1074,7 @@ function Header({ currentRoomId, activeCount, llmStatus, sceneRooms, activeView,
 }
 
 function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateChange, onSelectRoom, onBack, onRefresh }) {
+  const editedRoomCount = model.rooms.filter((room) => room.spatialSource === "editor").length;
   return (
     <section className="map-workspace-shell">
       <header className="map-workspace-header">
@@ -1082,7 +1083,7 @@ function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateCh
             <MapIcon size={20} />
             <h1>房屋结构管理</h1>
           </div>
-          <p>上传参考户型图，拖拽设备到房间，并维护 AI 控制使用的空间语义。</p>
+          <p>参考图只做底图；绿色房间框和设备点才是会保存、会应用到控制台的生效户型结构。</p>
         </div>
         <div className="map-workspace-actions">
           <button type="button" onClick={onRefresh} title="刷新 HA 家庭模型">
@@ -1095,6 +1096,11 @@ function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateCh
           </button>
         </div>
       </header>
+      <div className="map-workspace-status">
+        <span>参考底图：{state.floorPlanImageName || "未上传"}</span>
+        <span>生效结构：{model.rooms.length} 房间，{editedRoomCount} 个已校准</span>
+        <strong>已自动保存并应用到本地 3D/空间语义</strong>
+      </div>
       {hcmStatus?.error && <div className="map-workspace-error">{hcmStatus.error}</div>}
       <SpatialHomeEditor
         model={model}
@@ -1651,8 +1657,8 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
         <div className="spatial-map-column">
           <button className="spatial-upload-dropzone" type="button" onClick={() => fileInputRef.current?.click()}>
             <Upload size={15} />
-            <span>{state.floorPlanImage ? state.floorPlanImageName || "参考户型图已加载" : "拖拽或点击上传参考户型图"}</span>
-            <small>{state.floorPlanImage ? formatFileSize(state.floorPlanImageSize) || "当前会话" : "支持 PNG / JPG / HEIC 浏览器可读格式"}</small>
+            <span>{state.floorPlanImage ? `参考底图：${state.floorPlanImageName || "已加载"}` : "拖拽或点击上传参考底图"}</span>
+            <small>{state.floorPlanImage ? `${formatFileSize(state.floorPlanImageSize) || "当前会话"} · 不改写原图` : "支持 PNG / JPG / HEIC 浏览器可读格式"}</small>
           </button>
           <div
             ref={mapRef}

@@ -1547,6 +1547,34 @@ button {
   justify-content: flex-end;
 }
 
+.map-workspace-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.14);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.map-workspace-status span,
+.map-workspace-status strong {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(69, 111, 104, 0.12);
+  border-radius: 999px;
+  background: rgba(224, 238, 233, 0.26);
+}
+
+.map-workspace-status strong {
+  color: #287a5a;
+  background: rgba(229, 244, 240, 0.74);
+}
+
 .map-workspace-error {
   margin: 0;
   padding: 8px 10px;
