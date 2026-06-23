@@ -59,7 +59,7 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
 function userMessage({ input, plan, execution, targetNames }) {
   if (plan?.kind === "hcm_preference_feedback") return plan.summary;
   if (plan?.kind === "hcm_correction_feedback") return plan.summary;
-  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_state_query") return plan?.stateQuery?.summary || plan.summary;
+  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_state_query") return conciseStateMessage(plan) || plan?.stateQuery?.summary || plan.summary;
   if (execution?.status === "executed") {
     const action = execution.accepted?.[0];
     if (execution.accepted?.length === 1 && action?.thingName) {
@@ -86,6 +86,37 @@ function userMessage({ input, plan, execution, targetNames }) {
   if (execution?.status === "needs_clarification") return plan?.summary || "目标还不够明确，我没有操作设备。";
   if (execution?.status === "no_action") return plan?.summary || "没有找到可执行动作，我没有操作设备。";
   return plan?.summary || input || "已处理。";
+}
+
+function conciseStateMessage(plan) {
+  const query = plan?.stateQuery;
+  if (!query) return "";
+  if (query.mode === "room_light_state" && Array.isArray(query.items)) {
+    const on = query.items.filter((item) => item.state === true).map((item) => item.thingName);
+    const off = query.items.filter((item) => item.state === false).map((item) => item.thingName);
+    const unknown = query.items.filter((item) => item.state !== true && item.state !== false).map((item) => item.thingName);
+    const parts = [];
+    if (on.length > 0) parts.push(`${on.join("、")}开着`);
+    if (off.length > 0) parts.push(`${off.join("、")}关着`);
+    if (unknown.length > 0) parts.push(`${unknown.join("、")}状态未知`);
+    return `${query.roomName || query.thingName}：${parts.join("；") || "暂无可读状态"}。`;
+  }
+  const summary = String(query.summary ?? "");
+  if (!summary) return "";
+  const roomPrefix = query.roomName || roomNameFromSummary(summary);
+  if (/(有人|无人|人在状态未知)/.test(summary) && roomPrefix) {
+    const occupancy = summary.match(/：(有人|无人|人在状态未知)/)?.[1] ?? summary.match(/(有人|无人|人在状态未知)/)?.[1];
+    const details = [summary.match(/光照\s*[^，。]+/)?.[0], summary.match(/电量\s*[^，。]+/)?.[0]].filter(Boolean);
+    return occupancy ? `${roomPrefix}${occupancy}${details.length > 0 ? `，${details.join("，")}` : ""}。` : summary;
+  }
+  if (query.state === true) return `${query.thingName}开着。`;
+  if (query.state === false) return `${query.thingName}关着。`;
+  return summary.replace(/。该状态来自.*$/, "。").replace(/。状态来自.*$/, "。");
+}
+
+function roomNameFromSummary(summary) {
+  const match = String(summary).match(/^([^的：:]{1,8})(?:的|：|:)/);
+  return match?.[1] ?? "";
 }
 
 function targetNamesFromPlan(plan) {

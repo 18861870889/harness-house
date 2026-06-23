@@ -70,6 +70,54 @@ describe("intent explainer", () => {
     expect(explanation.summary).toContain("只读状态查询，不执行设备动作");
   });
 
+  it("keeps chat answers concise for business state questions", () => {
+    const explanation = explainIntentResult({
+      input: "厨房有人吗",
+      plan: {
+        kind: "hcm_state_query",
+        intentType: "state_query",
+        intent: "查询厨房是否有人",
+        confidence: 0.9,
+        actions: [],
+        stateQuery: {
+          thingName: "小米人在传感器-厨房",
+          roomName: "厨房",
+          summary: "厨房的小米人在传感器-厨房：无人，无人持续时长 10分钟持续无人，光照 6，电量 98%。",
+        },
+      },
+      execution: { status: "answered", accepted: [], rejected: [] },
+    });
+
+    expect(explanation.userMessage).toBe("厨房无人，光照 6，电量 98%。");
+  });
+
+  it("summarizes room light state without debug caveats in chat", () => {
+    const explanation = explainIntentResult({
+      input: "餐厅哪些灯开着",
+      plan: {
+        kind: "hcm_state_query",
+        intentType: "state_query",
+        intent: "查询餐厅灯光",
+        confidence: 0.9,
+        actions: [],
+        stateQuery: {
+          mode: "room_light_state",
+          thingName: "餐厅灯光",
+          roomName: "餐厅",
+          items: [
+            { thingName: "餐厅射灯", state: true },
+            { thingName: "餐厅吊灯", state: "unknown" },
+            { thingName: "餐边柜灯带", state: false },
+          ],
+          summary: "餐厅灯光：餐厅射灯开；餐厅吊灯未知；餐边柜灯带关。状态来自开关回路，不能独立证明灯具实际发光。",
+        },
+      },
+      execution: { status: "answered", accepted: [], rejected: [] },
+    });
+
+    expect(explanation.userMessage).toBe("餐厅：餐厅射灯开着；餐边柜灯带关着；餐厅吊灯状态未知。");
+  });
+
   it("explains correction feedback without implying a mapping change", () => {
     const plan = normalizeHcmPlannerDraft(
       "你说错了吧 我看厨房只有灯带",

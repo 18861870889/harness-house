@@ -22,6 +22,9 @@ export function createSpatialEditorState(base = {}) {
   return {
     version: SPATIAL_EDITOR_VERSION,
     floorPlanImage: typeof base.floorPlanImage === "string" ? base.floorPlanImage : null,
+    floorPlanImageName: typeof base.floorPlanImageName === "string" ? base.floorPlanImageName : "",
+    floorPlanImageSize: Number.isFinite(Number(base.floorPlanImageSize)) ? Number(base.floorPlanImageSize) : 0,
+    floorPlanImageUpdatedAt: typeof base.floorPlanImageUpdatedAt === "string" ? base.floorPlanImageUpdatedAt : "",
     roomNames: normalizeRecord(base.roomNames),
     deviceAssignments: normalizeRecord(base.deviceAssignments),
     devicePlacements: normalizePlacementRecord(base.devicePlacements),

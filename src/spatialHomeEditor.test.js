@@ -58,6 +58,22 @@ function createSwitchControlledHome() {
 }
 
 describe("spatial home editor", () => {
+  it("keeps uploaded floor plan metadata in local editor state", () => {
+    const state = createSpatialEditorState({
+      floorPlanImage: "data:image/png;base64,abc",
+      floorPlanImageName: "户型图.png",
+      floorPlanImageSize: 2048,
+      floorPlanImageUpdatedAt: "2026-06-23T00:00:00.000Z",
+    });
+
+    expect(state).toMatchObject({
+      floorPlanImage: "data:image/png;base64,abc",
+      floorPlanImageName: "户型图.png",
+      floorPlanImageSize: 2048,
+      floorPlanImageUpdatedAt: "2026-06-23T00:00:00.000Z",
+    });
+  });
+
   it("keeps logical assets separate from physical switch controllers", () => {
     const hcmHome = createSwitchControlledHome();
     const sceneModel = createHouseSceneModel({ hcmHome });

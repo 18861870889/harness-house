@@ -86,6 +86,10 @@ import {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SPATIAL_EDITOR_STORAGE_KEY = "harness-house.spatial-editor.v0.19";
 const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = ["harness-house.spatial-editor.v0.18B"];
+const APP_VIEWS = {
+  CONTROL: "control",
+  MAP_EDITOR: "map-editor",
+};
 
 function makeMessage(role, content, meta = {}) {
   return {
@@ -133,8 +137,32 @@ function writeSpatialEditorState(state) {
   }
 }
 
+function readAppView() {
+  if (typeof window === "undefined") return APP_VIEWS.CONTROL;
+  return window.location.hash === "#map-editor" ? APP_VIEWS.MAP_EDITOR : APP_VIEWS.CONTROL;
+}
+
+function isImageFile(file) {
+  return Boolean(file?.type?.startsWith("image/"));
+}
+
+function formatFileSize(size) {
+  const bytes = Number(size);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
+function conciseChatText(text) {
+  const lines = String(text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length <= 1) return lines[0] ?? "";
+  const priority = lines.find((line) => /是否|需要|已|无人|有人|状态未知|没有执行|等待|失败|离线/.test(line));
+  return priority ?? lines[0];
+}
+
 export default function App() {
   const sessionIdRef = useRef(crypto.randomUUID());
+  const [activeView, setActiveView] = useState(readAppView);
   const [devices, setDevices] = useState(() => structuredClone(initialDevices));
   const [input, setInput] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("study");
@@ -180,6 +208,12 @@ export default function App() {
   const lastSpokenMessageIdRef = useRef(null);
   const speechInput = useMemo(() => createBrowserSpeechInput(), []);
   const speechOutput = useMemo(() => createBrowserSpeechOutput(), []);
+
+  useEffect(() => {
+    const handleHashChange = () => setActiveView(readAppView());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   const currentRoomId = useMemo(() => inferCurrentRoom(devices), [devices]);
   const baseHouseSceneModel = useMemo(
@@ -672,7 +706,7 @@ export default function App() {
     const okCount = result.execution?.results?.filter((item) => item.ok && item.verification?.ok !== false).length ?? 0;
     const failCount = result.execution?.results?.filter((item) => !item.ok || item.verification?.ok === false).length ?? 0;
     const accepted = result.execution?.accepted ?? [];
-    const friendlyText = result.explanation?.userMessage;
+    const friendlyText = conciseChatText(result.explanation?.userMessage);
     const logText =
       friendlyText
         ? friendlyText
@@ -816,6 +850,13 @@ export default function App() {
     setSelectedRoomId(roomId);
   }, []);
 
+  const handleViewChange = useCallback((view) => {
+    setActiveView(view);
+    if (typeof window !== "undefined") {
+      window.location.hash = view === APP_VIEWS.MAP_EDITOR ? "map-editor" : "";
+    }
+  }, []);
+
   function toggleListening() {
     if (!speechInput.supported || processing) return;
     if (speechState.listening) {
@@ -853,6 +894,23 @@ export default function App() {
     });
   }
 
+  if (activeView === APP_VIEWS.MAP_EDITOR) {
+    return (
+      <main className="app map-editor-app">
+        <MapEditorWorkspace
+          model={spatialEditorModel}
+          state={spatialEditorState}
+          selectedRoomId={selectedRoomId}
+          hcmStatus={hcmStatus}
+          onStateChange={setSpatialEditorState}
+          onSelectRoom={setSelectedRoomId}
+          onBack={() => handleViewChange(APP_VIEWS.CONTROL)}
+          onRefresh={refreshHcmHome}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="app">
       <section className="scene-panel" aria-label="三维房屋模拟器">
@@ -870,6 +928,8 @@ export default function App() {
           activeCount={activeDevices.length}
           llmStatus={llmStatus}
           sceneRooms={houseSceneModel.rooms}
+          activeView={activeView}
+          onViewChange={handleViewChange}
         />
         <SystemMetrics devices={devices} />
         <HcmCatalog
@@ -883,13 +943,6 @@ export default function App() {
           reviewActionId={reviewActionId}
           onboardingActionId={onboardingActionId}
           defaultRunSummary={defaultRunSummary}
-        />
-        <SpatialHomeEditor
-          model={spatialEditorModel}
-          state={spatialEditorState}
-          selectedRoomId={selectedRoomId}
-          onStateChange={setSpatialEditorState}
-          onSelectRoom={setSelectedRoomId}
         />
         <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
         <DeviceList devices={selectedRoomDevices} />
@@ -955,7 +1008,7 @@ export default function App() {
   );
 }
 
-function Header({ currentRoomId, activeCount, llmStatus, sceneRooms }) {
+function Header({ currentRoomId, activeCount, llmStatus, sceneRooms, activeView, onViewChange }) {
   return (
     <header className="product-header">
       <div className="mark">
@@ -969,6 +1022,26 @@ function Header({ currentRoomId, activeCount, llmStatus, sceneRooms }) {
         <span className="live-dot" />
         Local
       </div>
+      <div className="view-switch" role="group" aria-label="工作区">
+        <button
+          className={activeView === APP_VIEWS.CONTROL ? "selected" : ""}
+          type="button"
+          onClick={() => onViewChange(APP_VIEWS.CONTROL)}
+          title="控制台"
+        >
+          <Home size={13} />
+          控制
+        </button>
+        <button
+          className={activeView === APP_VIEWS.MAP_EDITOR ? "selected" : ""}
+          type="button"
+          onClick={() => onViewChange(APP_VIEWS.MAP_EDITOR)}
+          title="房屋结构编辑"
+        >
+          <MapIcon size={13} />
+          地图
+        </button>
+      </div>
       <div className="header-facts">
         <Fact icon={Layers3} label="当前区域" value={getSceneRoomName(currentRoomId, sceneRooms)} />
         <Fact icon={Power} label="活跃设备" value={`${activeCount}`} />
@@ -979,6 +1052,41 @@ function Header({ currentRoomId, activeCount, llmStatus, sceneRooms }) {
         />
       </div>
     </header>
+  );
+}
+
+function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateChange, onSelectRoom, onBack, onRefresh }) {
+  return (
+    <section className="map-workspace-shell">
+      <header className="map-workspace-header">
+        <div>
+          <div className="map-workspace-title">
+            <MapIcon size={20} />
+            <h1>房屋结构管理</h1>
+          </div>
+          <p>上传参考户型图，拖拽设备到房间，并维护 AI 控制使用的空间语义。</p>
+        </div>
+        <div className="map-workspace-actions">
+          <button type="button" onClick={onRefresh} title="刷新 HA 家庭模型">
+            <RefreshCw size={14} />
+            刷新设备
+          </button>
+          <button type="button" onClick={onBack} title="返回控制台">
+            <Home size={14} />
+            控制台
+          </button>
+        </div>
+      </header>
+      {hcmStatus?.error && <div className="map-workspace-error">{hcmStatus.error}</div>}
+      <SpatialHomeEditor
+        model={model}
+        state={state}
+        selectedRoomId={selectedRoomId}
+        onStateChange={onStateChange}
+        onSelectRoom={onSelectRoom}
+        workspace
+      />
+    </section>
   );
 }
 
@@ -1246,10 +1354,11 @@ function executableCapabilityCount(thing) {
     .length;
 }
 
-function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom }) {
+function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom, workspace = false }) {
   const mapRef = useRef(null);
   const fileInputRef = useRef(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [floorPlanDragActive, setFloorPlanDragActive] = useState(false);
   const selectedDevice = useMemo(
     () => (selectedDeviceId ? model.devices.find((device) => device.id === selectedDeviceId) ?? null : null),
     [model.devices, selectedDeviceId],
@@ -1268,23 +1377,43 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
     [onStateChange],
   );
 
+  const readFloorPlanFile = useCallback(
+    (file) => {
+      if (!isImageFile(file)) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        updateState({
+          ...state,
+          floorPlanImage: reader.result,
+          floorPlanImageName: file.name,
+          floorPlanImageSize: file.size,
+          floorPlanImageUpdatedAt: new Date().toISOString(),
+        });
+      };
+      reader.readAsDataURL(file);
+    },
+    [state, updateState],
+  );
+
   const handleFloorPlanUpload = useCallback(
     (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        updateState({ ...state, floorPlanImage: reader.result });
-      };
-      reader.readAsDataURL(file);
+      readFloorPlanFile(file);
       event.target.value = "";
     },
-    [state, updateState],
+    [readFloorPlanFile],
   );
 
   const handleDrop = useCallback(
     (event, roomId = null) => {
       event.preventDefault();
+      setFloorPlanDragActive(false);
+      const file = Array.from(event.dataTransfer.files ?? []).find(isImageFile);
+      if (file) {
+        readFloorPlanFile(file);
+        return;
+      }
       const deviceId = event.dataTransfer.getData("text/plain");
       const rect = mapRef.current?.getBoundingClientRect();
       if (!deviceId || !rect) return;
@@ -1294,8 +1423,22 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
       setSelectedDeviceId(deviceId);
       if (roomId) onSelectRoom(roomId);
     },
-    [onSelectRoom, state, updateState],
+    [onSelectRoom, readFloorPlanFile, state, updateState],
   );
+
+  const handleMapDragOver = useCallback((event) => {
+    event.preventDefault();
+    if (Array.from(event.dataTransfer.types ?? []).includes("Files")) {
+      event.dataTransfer.dropEffect = "copy";
+      setFloorPlanDragActive(true);
+    } else {
+      event.dataTransfer.dropEffect = "move";
+    }
+  }, []);
+
+  const handleMapDragLeave = useCallback((event) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) setFloorPlanDragActive(false);
+  }, []);
 
   const handleDeviceDrag = useCallback((event, deviceId) => {
     event.dataTransfer.effectAllowed = "move";
@@ -1360,10 +1503,10 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
   const stats = model.stats ?? {};
 
   return (
-    <section className="panel spatial-editor">
+    <section className={workspace ? "panel spatial-editor workspace" : "panel spatial-editor"}>
       <div className="panel-title">
         <MapIcon size={17} />
-        <h2>Spatial Model</h2>
+        <h2>{workspace ? "房屋结构编辑器" : "Spatial Model"}</h2>
         <button
           className="mini-icon-button"
           type="button"
@@ -1374,24 +1517,6 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
         </button>
       </div>
 
-      <div className="spatial-stats">
-        <span>
-          已定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED] ?? 0}</strong>
-        </span>
-        <span>
-          待定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED] ?? 0}</strong>
-        </span>
-        <span>
-          待归房 <strong>{stats[SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED] ?? 0}</strong>
-        </span>
-      </div>
-
-      <SpatialSuggestions
-        suggestions={model.suggestions}
-        onApply={handleApplySuggestion}
-        onDismiss={handleDismissSuggestion}
-      />
-
       <input
         ref={fileInputRef}
         className="spatial-file-input"
@@ -1400,102 +1525,143 @@ function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSele
         onChange={handleFloorPlanUpload}
       />
 
-      <div
-        ref={mapRef}
-        className="spatial-map"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => handleDrop(event)}
-      >
-        {state.floorPlanImage ? (
-          <img className="spatial-floor-image" src={state.floorPlanImage} alt="户型图" />
-        ) : (
-          <div className="spatial-map-empty">
-            <MousePointer2 size={15} />
-            <span>Drop devices on rooms</span>
-          </div>
-        )}
-        {model.rooms.map((room) => (
-          <button
-            className={room.id === selectedRoomId ? "spatial-room-zone selected" : "spatial-room-zone"}
-            key={room.id}
-            type="button"
-            style={room.mapRect ? {
-              left: `${room.mapRect.left}%`,
-              top: `${room.mapRect.top}%`,
-              width: `${room.mapRect.width}%`,
-              height: `${room.mapRect.height}%`,
-            } : undefined}
-            onClick={() => onSelectRoom(room.id)}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => handleDrop(event, room.id)}
-            title={room.editorName}
-          >
-            <span>{room.editorName}</span>
+      <div className="spatial-editor-body">
+        <div className="spatial-map-column">
+          <button className="spatial-upload-dropzone" type="button" onClick={() => fileInputRef.current?.click()}>
+            <Upload size={15} />
+            <span>{state.floorPlanImage ? state.floorPlanImageName || "参考户型图已加载" : "拖拽或点击上传参考户型图"}</span>
+            <small>{state.floorPlanImage ? formatFileSize(state.floorPlanImageSize) || "当前会话" : "支持 PNG / JPG / HEIC 浏览器可读格式"}</small>
           </button>
-        ))}
-        {markers.map(({ device, x, y, ghost }) => (
-          <button
+          <div
+            ref={mapRef}
             className={[
-              "spatial-device-marker",
-              device.id === selectedDevice?.id ? "selected" : "",
-              ghost ? "ghost" : "",
-              `role-${device.role}`,
+              "spatial-map",
+              state.floorPlanImage ? "has-floor-plan" : "",
+              floorPlanDragActive ? "upload-active" : "",
             ].filter(Boolean).join(" ")}
-            key={`${device.id}:${ghost ? "ghost" : "placed"}`}
-            type="button"
-            style={{ left: `${x}%`, top: `${y}%` }}
-            onClick={() => handleSelectDevice(device)}
-            title={device.displayName}
+            onDragOver={handleMapDragOver}
+            onDragLeave={handleMapDragLeave}
+            onDrop={(event) => handleDrop(event)}
           >
-            <LocateFixed size={12} />
-          </button>
-        ))}
+            {state.floorPlanImage ? (
+              <img className="spatial-floor-image" src={state.floorPlanImage} alt="户型图" />
+            ) : (
+              <div className="spatial-map-empty">
+                <MousePointer2 size={15} />
+                <span>拖拽户型图或设备到这里</span>
+              </div>
+            )}
+            {floorPlanDragActive && (
+              <div className="spatial-upload-overlay">
+                <Upload size={20} />
+                <span>松开以上传为参考户型图</span>
+              </div>
+            )}
+            {model.rooms.map((room) => (
+              <button
+                className={room.id === selectedRoomId ? "spatial-room-zone selected" : "spatial-room-zone"}
+                key={room.id}
+                type="button"
+                style={room.mapRect ? {
+                  left: `${room.mapRect.left}%`,
+                  top: `${room.mapRect.top}%`,
+                  width: `${room.mapRect.width}%`,
+                  height: `${room.mapRect.height}%`,
+                } : undefined}
+                onClick={() => onSelectRoom(room.id)}
+                onDragOver={handleMapDragOver}
+                onDrop={(event) => handleDrop(event, room.id)}
+                title={room.editorName}
+              >
+                <span>{room.editorName}</span>
+              </button>
+            ))}
+            {markers.map(({ device, x, y, ghost }) => (
+              <button
+                className={[
+                  "spatial-device-marker",
+                  device.id === selectedDevice?.id ? "selected" : "",
+                  ghost ? "ghost" : "",
+                  `role-${device.role}`,
+                ].filter(Boolean).join(" ")}
+                key={`${device.id}:${ghost ? "ghost" : "placed"}`}
+                type="button"
+                style={{ left: `${x}%`, top: `${y}%` }}
+                onClick={() => handleSelectDevice(device)}
+                title={device.displayName}
+              >
+                <LocateFixed size={12} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="spatial-side-column">
+          <div className="spatial-stats">
+            <span>
+              已定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED] ?? 0}</strong>
+            </span>
+            <span>
+              待定位 <strong>{stats[SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED] ?? 0}</strong>
+            </span>
+            <span>
+              待归房 <strong>{stats[SPATIAL_DEVICE_STATUS.PLACED_UNASSIGNED] ?? 0}</strong>
+            </span>
+          </div>
+
+          <SpatialSuggestions
+            suggestions={model.suggestions}
+            onApply={handleApplySuggestion}
+            onDismiss={handleDismissSuggestion}
+          />
+
+          <div className="room-name-grid">
+            {model.rooms.slice(0, workspace ? model.rooms.length : 6).map((room) => (
+              <label key={room.id}>
+                <span>{room.name}</span>
+                <input
+                  value={state.roomNames[room.id] ?? room.name}
+                  onChange={(event) => updateState(updateSpatialRoomName(state, room.id, event.target.value))}
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="naming-toggle" role="group" aria-label="设备命名规则">
+            <button
+              className={state.namingMode === NAMING_MODES.ROOM_DEFAULT ? "selected" : ""}
+              type="button"
+              onClick={() => handleNamingMode(NAMING_MODES.ROOM_DEFAULT)}
+            >
+              房间+默认名
+            </button>
+            <button
+              className={state.namingMode === NAMING_MODES.ROOM_CUSTOM ? "selected" : ""}
+              type="button"
+              onClick={() => handleNamingMode(NAMING_MODES.ROOM_CUSTOM)}
+            >
+              房间+自定义名
+            </button>
+          </div>
+
+          <SpatialDeviceLanes
+            groups={model.groups}
+            selectedDeviceId={selectedDevice?.id}
+            onDragStart={handleDeviceDrag}
+            onSelect={handleSelectDevice}
+            limit={workspace ? 18 : 5}
+          />
+
+          <SpatialDeviceDetail
+            device={selectedDevice}
+            rooms={model.rooms}
+            state={state}
+            onAssign={handleAssignDevice}
+            onRename={(deviceId, value) => updateState(updateSpatialDeviceName(state, deviceId, value))}
+            onClearPlacement={(deviceId) => updateState(clearSpatialPlacement(state, deviceId))}
+          />
+        </div>
       </div>
-
-      <div className="room-name-grid">
-        {model.rooms.slice(0, 6).map((room) => (
-          <label key={room.id}>
-            <span>{room.name}</span>
-            <input
-              value={state.roomNames[room.id] ?? room.name}
-              onChange={(event) => updateState(updateSpatialRoomName(state, room.id, event.target.value))}
-            />
-          </label>
-        ))}
-      </div>
-
-      <div className="naming-toggle" role="group" aria-label="设备命名规则">
-        <button
-          className={state.namingMode === NAMING_MODES.ROOM_DEFAULT ? "selected" : ""}
-          type="button"
-          onClick={() => handleNamingMode(NAMING_MODES.ROOM_DEFAULT)}
-        >
-          房间+默认名
-        </button>
-        <button
-          className={state.namingMode === NAMING_MODES.ROOM_CUSTOM ? "selected" : ""}
-          type="button"
-          onClick={() => handleNamingMode(NAMING_MODES.ROOM_CUSTOM)}
-        >
-          房间+自定义名
-        </button>
-      </div>
-
-      <SpatialDeviceLanes
-        groups={model.groups}
-        selectedDeviceId={selectedDevice?.id}
-        onDragStart={handleDeviceDrag}
-        onSelect={handleSelectDevice}
-      />
-
-      <SpatialDeviceDetail
-        device={selectedDevice}
-        rooms={model.rooms}
-        state={state}
-        onAssign={handleAssignDevice}
-        onRename={(deviceId, value) => updateState(updateSpatialDeviceName(state, deviceId, value))}
-        onClearPlacement={(deviceId) => updateState(clearSpatialPlacement(state, deviceId))}
-      />
     </section>
   );
 }
@@ -1529,7 +1695,7 @@ function SpatialSuggestions({ suggestions = [], onApply, onDismiss }) {
   );
 }
 
-function SpatialDeviceLanes({ groups, selectedDeviceId, onDragStart, onSelect }) {
+function SpatialDeviceLanes({ groups, selectedDeviceId, onDragStart, onSelect, limit = 5 }) {
   const lanes = [
     [SPATIAL_DEVICE_STATUS.ASSIGNED_PLACED, "已分配已放置"],
     [SPATIAL_DEVICE_STATUS.ASSIGNED_UNPLACED, "已分配待定位"],
@@ -1545,7 +1711,7 @@ function SpatialDeviceLanes({ groups, selectedDeviceId, onDragStart, onSelect })
             <strong>{groups[status]?.length ?? 0}</strong>
           </div>
           <div className="spatial-device-chip-list">
-            {(groups[status] ?? []).slice(0, 5).map((device) => (
+            {(groups[status] ?? []).slice(0, limit).map((device) => (
               <button
                 className={device.id === selectedDeviceId ? "spatial-device-chip selected" : "spatial-device-chip"}
                 key={device.id}
