@@ -280,6 +280,10 @@ export default function App() {
       houseSceneModel.devices.filter((device) => device.roomId === selectedRoomId),
     [houseSceneModel, selectedRoomId],
   );
+  const selectedRoomName = useMemo(
+    () => getSceneRoomName(selectedRoomId, houseSceneModel.rooms),
+    [houseSceneModel.rooms, selectedRoomId],
+  );
   const activeDevices = useMemo(
     () =>
       Object.values(devices).filter((device) => {
@@ -936,7 +940,16 @@ export default function App() {
   }
 
   return (
-    <main className="app">
+    <main className="app control-app">
+      <Header
+        currentRoomId={currentRoomId}
+        activeCount={activeDevices.length}
+        llmStatus={llmStatus}
+        sceneRooms={houseSceneModel.rooms}
+        activeView={activeView}
+        onViewChange={handleViewChange}
+      />
+
       <section className="scene-panel" aria-label="三维房屋模拟器">
         <ThreeHouse
           devices={devices}
@@ -946,16 +959,15 @@ export default function App() {
         />
       </section>
 
-      <aside className="left-rail">
-        <Header
-          currentRoomId={currentRoomId}
-          activeCount={activeDevices.length}
-          llmStatus={llmStatus}
-          sceneRooms={houseSceneModel.rooms}
-          activeView={activeView}
-          onViewChange={handleViewChange}
+      <aside className="left-rail control-rail home-rail" aria-label="房屋与设备">
+        <RailHeader
+          eyebrow="Home"
+          title={selectedRoomName}
+          meta={`${selectedRoomDevices.length} 个设备 · ${activeDevices.length} 个活跃`}
+          icon={Home}
         />
-        <SystemMetrics devices={devices} />
+        <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
+        <DeviceList devices={selectedRoomDevices} />
         <HcmCatalog
           home={hcmHome}
           onboarding={onboardingPlan}
@@ -968,11 +980,16 @@ export default function App() {
           onboardingActionId={onboardingActionId}
           defaultRunSummary={defaultRunSummary}
         />
-        <RoomSelector rooms={houseSceneModel.rooms} selectedRoomId={selectedRoomId} onSelect={setSelectedRoomId} />
-        <DeviceList devices={selectedRoomDevices} />
+        <SystemMetrics devices={devices} />
       </aside>
 
-      <aside className="right-rail">
+      <aside className="right-rail control-rail ai-rail" aria-label="AI 对话与执行">
+        <RailHeader
+          eyebrow="Runtime"
+          title="意图与执行"
+          meta={llmStatus.configured ? `Real · ${llmStatus.model}` : "Sim fallback"}
+          icon={Bot}
+        />
         <CommandConsole
           input={input}
           setInput={setInput}
@@ -1029,6 +1046,21 @@ export default function App() {
         </button>
       </div>
     </main>
+  );
+}
+
+function RailHeader({ eyebrow, title, meta, icon: Icon }) {
+  return (
+    <div className="rail-header">
+      <div className="rail-header-icon">
+        <Icon size={15} />
+      </div>
+      <div>
+        <span>{eyebrow}</span>
+        <strong>{title}</strong>
+      </div>
+      <small>{meta}</small>
+    </div>
   );
 }
 
