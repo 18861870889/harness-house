@@ -145,11 +145,19 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
       : sensorState?.label
         ? sensorState.label
         : autoExecutable > 0
-        ? `${autoExecutable}/${controllable} auto`
+        ? controlStatusLabel({ autoExecutable, controllable })
         : readable > 0
-          ? `${readable} read`
+          ? `只读 ${readable} 项`
           : "protected",
   };
+}
+
+function controlStatusLabel({ autoExecutable, controllable }) {
+  if (autoExecutable > 0 && controllable > 0 && autoExecutable === controllable) return "可自动控制";
+  if (autoExecutable > 0 && controllable > 0) return `自动 ${autoExecutable}/${controllable}`;
+  if (autoExecutable > 0) return `可自动 ${autoExecutable} 项`;
+  if (controllable > 0) return `需确认 ${controllable} 项`;
+  return "不可控制";
 }
 
 function describeSensorThing(thing) {

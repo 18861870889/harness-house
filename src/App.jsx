@@ -1293,7 +1293,7 @@ function HcmCatalog({
                 <span>{thing.type}</span>
                 <strong>{thing.name}</strong>
                 <small>
-                  {thing.boundary?.label ?? `${thing.state.autoExecutable}/${executableCapabilityCount(thing)} auto`}
+                  {thing.boundary?.label ?? thingStateBadge(thing)}
                 </small>
               </div>
             ))}
@@ -1415,6 +1415,18 @@ function CapabilityBoundarySummary({ summary }) {
 function executableCapabilityCount(thing) {
   return (thing.capabilities ?? []).filter((capability) => capability.kind === "control" || capability.kind === "action")
     .length;
+}
+
+function thingStateBadge(thing) {
+  const autoExecutable = thing.state?.autoExecutable ?? 0;
+  const controllable = executableCapabilityCount(thing);
+  const readable = thing.state?.readable ?? 0;
+  if (autoExecutable > 0 && controllable > 0 && autoExecutable === controllable) return "可自动控制";
+  if (autoExecutable > 0 && controllable > 0) return `自动 ${autoExecutable}/${controllable}`;
+  if (autoExecutable > 0) return `可自动 ${autoExecutable} 项`;
+  if (controllable > 0) return `需确认 ${controllable} 项`;
+  if (readable > 0) return `只读 ${readable} 项`;
+  return thing.online === false ? "离线" : "受保护";
 }
 
 function SpatialHomeEditor({ model, state, selectedRoomId, onStateChange, onSelectRoom, workspace = false }) {

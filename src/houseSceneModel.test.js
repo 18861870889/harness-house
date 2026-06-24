@@ -56,13 +56,13 @@ describe("house scene model", () => {
         expect.objectContaining({
           id: "ha_feeder",
           roomId: "cat_room",
-          statusLabel: "5 read",
+          statusLabel: "只读 5 项",
           source: "hcm",
         }),
         expect.objectContaining({
           id: "ha_master_bath_switch",
           roomId: "master_bath",
-          statusLabel: "2/4 auto",
+          statusLabel: "自动 2/4",
         }),
       ]),
     );
