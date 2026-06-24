@@ -121,6 +121,7 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
   const autoExecutable = thing.state?.autoExecutable ?? 0;
   const controllable = thing.state?.controllable ?? 0;
   const readable = thing.state?.readable ?? 0;
+  const sensorState = describeSensorThing(thing);
   return {
     id: thing.id,
     name: thing.name,
@@ -136,14 +137,99 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
     autoExecutable,
     controllable,
     readable,
+    ...(thing.logicalAsset && typeof thing.state?.commandedState === "boolean" ? { on: thing.state.commandedState } : {}),
+    ...(sensorState?.detected !== undefined ? { detected: sensorState.detected } : {}),
+    ...(sensorState?.open !== undefined ? { open: sensorState.open } : {}),
     statusLabel: thing.logicalAsset
       ? logicalAssetStatusLabel(thing)
-      : autoExecutable > 0
+      : sensorState?.label
+        ? sensorState.label
+        : autoExecutable > 0
         ? `${autoExecutable}/${controllable} auto`
         : readable > 0
           ? `${readable} read`
           : "protected",
   };
+}
+
+function describeSensorThing(thing) {
+  if (thing.type === "presence_sensor") return describePresenceSensor(thing);
+  if (thing.type === "motion_sensor") return describeMotionSensor(thing);
+  if (thing.type === "door_sensor") return describeDoorSensor(thing);
+  return null;
+}
+
+function describePresenceSensor(thing) {
+  const occupancy = findCapability(thing, /有人无人|occupancy|存在.*状态|presence/);
+  const hasDuration = findCapability(thing, /有人持续|has_someone/);
+  const noDuration = findCapability(thing, /无人持续|no_one/);
+  const active = capabilityBooleanState(occupancy);
+  if (active === true) {
+    return {
+      detected: true,
+      label: joinStatusParts(["有人", readableState(hasDuration)]),
+    };
+  }
+  if (active === false) {
+    return {
+      detected: false,
+      label: joinStatusParts(["无人", readableState(noDuration)]),
+    };
+  }
+  return { detected: false, label: "状态未知" };
+}
+
+function describeMotionSensor(thing) {
+  const motion = findCapability(thing, /检测到移动|motion/);
+  const noMotion = findCapability(thing, /无移动|no_motion/);
+  const active = capabilityBooleanState(motion);
+  if (active === true) return { detected: true, label: "有移动" };
+  if (active === false) return { detected: false, label: "无移动" };
+  if (noMotion && !isUnknownState(noMotion.state)) {
+    return { detected: false, label: joinStatusParts(["无移动", readableState(noMotion)]) };
+  }
+  if (motion && !isUnknownState(motion.state)) {
+    return { detected: false, label: joinStatusParts(["最近移动", readableState(motion)]) };
+  }
+  return { detected: false, label: "状态未知" };
+}
+
+function describeDoorSensor(thing) {
+  const contact = findCapability(thing, /接触状态|contact|门窗|door|window/);
+  const open = capabilityBooleanState(contact);
+  if (open === true) return { open: true, label: "开启" };
+  if (open === false) return { open: false, label: "关闭" };
+  return { open: false, label: "状态未知" };
+}
+
+function findCapability(thing, pattern) {
+  return (thing.capabilities ?? []).find((capability) => {
+    const text = `${capability.id ?? ""} ${capability.name ?? ""} ${capability.binding?.entityId ?? ""}`.toLowerCase();
+    return pattern.test(text);
+  });
+}
+
+function capabilityBooleanState(capability) {
+  if (!capability) return null;
+  const state = capability.state;
+  if (state === true || state === false) return state;
+  const text = String(capability.binding?.currentState ?? state ?? "").toLowerCase();
+  if (["on", "open", "detected", "motion", "occupied", "home", "true"].includes(text)) return true;
+  if (["off", "closed", "clear", "not_detected", "no_motion", "unoccupied", "away", "false"].includes(text)) return false;
+  return null;
+}
+
+function readableState(capability) {
+  if (!capability || isUnknownState(capability.state)) return "";
+  return String(capability.state);
+}
+
+function isUnknownState(state) {
+  return state === undefined || state === null || state === "" || state === "unknown" || state === "unavailable";
+}
+
+function joinStatusParts(parts) {
+  return parts.filter(Boolean).join(" · ");
 }
 
 function createLifeViewThings(home) {

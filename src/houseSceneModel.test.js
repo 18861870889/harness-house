@@ -84,6 +84,77 @@ describe("house scene model", () => {
     });
   });
 
+  it("projects HCM sensor readings into the scene model", () => {
+    const home = createHcmHome({
+      provider: { id: "home_assistant", name: "Home Assistant" },
+      spaces: [
+        { id: "entry", name: "玄关" },
+        { id: "study", name: "书房" },
+      ],
+      things: [
+        {
+          id: "study_presence",
+          name: "书房人在传感器",
+          type: "presence_sensor",
+          spaceId: "study",
+          online: true,
+          capabilities: [
+            {
+              id: "occupancy",
+              name: "有人无人状态",
+              kind: "sensor",
+              valueType: "boolean",
+              state: false,
+              binding: { domain: "binary_sensor", currentState: "off" },
+            },
+            {
+              id: "no_one_duration",
+              name: "无人持续时长",
+              kind: "sensor",
+              state: "30分钟持续无人",
+            },
+          ],
+          state: { autoExecutable: 0, controllable: 0, readable: 2 },
+        },
+        {
+          id: "front_door",
+          name: "大门守卫",
+          type: "door_sensor",
+          spaceId: "entry",
+          online: true,
+          capabilities: [
+            {
+              id: "contact",
+              name: "门窗传感器 接触状态",
+              kind: "sensor",
+              valueType: "boolean",
+              state: false,
+              binding: { domain: "binary_sensor", currentState: "off" },
+            },
+          ],
+          state: { autoExecutable: 0, controllable: 0, readable: 1 },
+        },
+      ],
+    });
+
+    const model = createHouseSceneModel({ hcmHome: home });
+
+    expect(model.devices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "study_presence",
+          detected: false,
+          statusLabel: "无人 · 30分钟持续无人",
+        }),
+        expect.objectContaining({
+          id: "front_door",
+          open: false,
+          statusLabel: "关闭",
+        }),
+      ]),
+    );
+  });
+
   it("shows logical lights in their semantic room instead of the physical switch panel", () => {
     const home = attachHcmControlGraph(createHcmHome({
       provider: { id: "home_assistant", name: "Home Assistant" },

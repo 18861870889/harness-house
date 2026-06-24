@@ -454,8 +454,7 @@ function occupancyEvidenceForThing(thing, generatedAt) {
   const type = thing.type;
   if (!["presence_sensor", "motion_sensor", "door_sensor"].includes(type)) return null;
 
-  const activeCapability = (thing.capabilities ?? []).find((capability) => isActivePresenceState(capability.state));
-  if (!activeCapability) return null;
+  if (!hasCurrentActiveSensorState(thing)) return null;
 
   if (type === "presence_sensor") {
     return {
@@ -484,9 +483,33 @@ function occupancyEvidenceForThing(thing, generatedAt) {
   };
 }
 
+function hasCurrentActiveSensorState(thing) {
+  const currentCapability = findCurrentSensorCapability(thing);
+  return isActivePresenceState(currentCapability?.state ?? currentCapability?.binding?.currentState);
+}
+
+function findCurrentSensorCapability(thing) {
+  const capabilities = thing.capabilities ?? [];
+  const textFor = (capability) => `${capability.id ?? ""} ${capability.name ?? ""} ${capability.binding?.entityId ?? ""}`.toLowerCase();
+  if (thing.type === "presence_sensor") {
+    return capabilities.find((capability) => /有人无人|occupancy|存在.*状态|presence/.test(textFor(capability)));
+  }
+  if (thing.type === "motion_sensor") {
+    return capabilities.find((capability) => {
+      if (capability.valueType === "event" || capability.binding?.domain === "event") return false;
+      return /检测到移动|motion/.test(textFor(capability));
+    });
+  }
+  if (thing.type === "door_sensor") {
+    return capabilities.find((capability) => /接触状态|contact|门窗|door|window/.test(textFor(capability)));
+  }
+  return null;
+}
+
 function isActivePresenceState(state) {
-  if (state === true || state === "on" || state === "open" || state === "detected" || state === "motion") return true;
-  if (typeof state === "string" && /^\d{4}-\d{2}-\d{2}t/i.test(state)) return true;
+  if (state === true) return true;
+  const text = String(state ?? "").toLowerCase();
+  if (["on", "open", "detected", "motion", "occupied", "home", "true"].includes(text)) return true;
   return false;
 }
 

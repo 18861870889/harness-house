@@ -125,6 +125,16 @@ function canUseRealHcmCommand(home, llmStatus) {
   );
 }
 
+function isActiveHomeDevice(device) {
+  if (!device) return false;
+  if ("on" in device) return Boolean(device.on);
+  if ("detected" in device) return Boolean(device.detected);
+  if ("open" in device) return Boolean(device.open);
+  if (device.type === "robot_vacuum") return device.status === "cleaning";
+  if (["washer", "dryer"].includes(device.type)) return device.status === "running";
+  return false;
+}
+
 function readSpatialEditorState() {
   if (typeof window === "undefined") return createSpatialEditorState();
   for (const key of [SPATIAL_EDITOR_STORAGE_KEY, ...SPATIAL_EDITOR_LEGACY_STORAGE_KEYS]) {
@@ -284,15 +294,8 @@ export default function App() {
     [houseSceneModel.rooms, selectedRoomId],
   );
   const activeDevices = useMemo(
-    () =>
-      Object.values(devices).filter((device) => {
-        if ("on" in device) return device.on;
-        if ("detected" in device) return device.detected;
-        if (device.type === "robot_vacuum") return device.status === "cleaning";
-        if (["washer", "dryer"].includes(device.type)) return device.status === "running";
-        return false;
-      }),
-    [devices],
+    () => houseSceneModel.devices.filter(isActiveHomeDevice),
+    [houseSceneModel.devices],
   );
 
   useEffect(() => {
@@ -1017,7 +1020,7 @@ export default function App() {
           onSimulate={simulateAutomation}
           onReview={reviewAutomationSuggestion}
         />
-        <SensorSimulator devices={devices} />
+        <SensorReadouts sceneModel={houseSceneModel} fallbackDevices={devices} />
         <AuditLog logs={logs} />
       </aside>
 
@@ -2620,8 +2623,19 @@ function AutomationSuggestionsPanel({ data, actionId, onCapture, onSimulate, onR
   );
 }
 
-function SensorSimulator({ devices }) {
-  const sensors = [devices.entry_motion, devices.kitchen_presence, devices.study_presence, devices.front_door];
+function SensorReadouts({ sceneModel, fallbackDevices }) {
+  const sensors = useMemo(() => {
+    const sceneSensors = (sceneModel?.devices ?? [])
+      .filter(isSensorDevice)
+      .sort(compareSensorReadouts);
+    if (sceneModel?.source === "hcm" && sceneSensors.length > 0) return sceneSensors;
+    return [
+      fallbackDevices.entry_motion,
+      fallbackDevices.kitchen_presence,
+      fallbackDevices.study_presence,
+      fallbackDevices.front_door,
+    ].filter(Boolean);
+  }, [fallbackDevices, sceneModel]);
   return (
     <section className="panel sensor-panel">
       <div className="panel-title">
@@ -2638,6 +2652,22 @@ function SensorSimulator({ devices }) {
       </div>
     </section>
   );
+}
+
+function isSensorDevice(device) {
+  return ["presence_sensor", "motion_sensor", "door_sensor"].includes(device.type);
+}
+
+function compareSensorReadouts(first, second) {
+  const firstRoomRank = roomDisplayRank(first.roomId);
+  const secondRoomRank = roomDisplayRank(second.roomId);
+  return firstRoomRank - secondRoomRank || first.name.localeCompare(second.name, "zh-CN");
+}
+
+function roomDisplayRank(roomId) {
+  const order = ["entry", "living", "dining", "kitchen", "study", "master", "second", "cat_room", "bath", "master_bath", "balcony"];
+  const index = order.indexOf(roomId);
+  return index === -1 ? 99 : index;
 }
 
 function AuditLog({ logs }) {

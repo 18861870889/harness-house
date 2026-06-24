@@ -24,8 +24,8 @@ describe("agent runtime", () => {
       confidence: 0.92,
     });
     expect(context.spaces.find((space) => space.id === "entry")).toMatchObject({
-      occupied: true,
-      confidence: 0.64,
+      occupied: false,
+      confidence: 0,
     });
   });
 
