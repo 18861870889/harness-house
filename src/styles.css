@@ -684,7 +684,6 @@ button {
 }
 
 .room-button,
-.sensor-button,
 .example-chip,
 .icon-command,
 .send-button,
@@ -701,7 +700,6 @@ button {
 }
 
 .room-button:hover,
-.sensor-button:hover,
 .example-chip:hover,
 .icon-command:hover,
 .send-button:hover,
@@ -711,7 +709,6 @@ button {
 }
 
 .room-button:active,
-.sensor-button:active,
 .example-chip:active,
 .icon-command:active,
 .send-button:active,
@@ -734,7 +731,7 @@ button {
 }
 
 .room-button span,
-.sensor-button span {
+.sensor-card span {
   display: block;
   overflow: hidden;
   color: var(--text);
@@ -745,7 +742,7 @@ button {
 }
 
 .room-button small,
-.sensor-button strong {
+.sensor-card strong {
   display: block;
   margin-top: 4px;
   overflow: hidden;
@@ -2602,10 +2599,18 @@ button {
   gap: 8px;
 }
 
-.sensor-button {
+.sensor-card {
   min-width: 0;
   padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
   text-align: left;
+}
+
+.sensor-card strong {
+  color: var(--cyan);
+  font-weight: 800;
 }
 
 .audit-list {

@@ -86,7 +86,6 @@ import {
   rooms,
   summarizeHome,
   tickDevices,
-  toggleSensor,
 } from "./simulator.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -870,10 +869,6 @@ export default function App() {
     ]);
   }
 
-  function toggleDeviceSensor(sensorId) {
-    setDevices((current) => toggleSensor(current, sensorId));
-  }
-
   const handleSelectRoom = useCallback((roomId) => {
     setSelectedRoomId(roomId);
   }, []);
@@ -1022,7 +1017,7 @@ export default function App() {
           onSimulate={simulateAutomation}
           onReview={reviewAutomationSuggestion}
         />
-        <SensorSimulator devices={devices} onToggle={toggleDeviceSensor} />
+        <SensorSimulator devices={devices} />
         <AuditLog logs={logs} />
       </aside>
 
@@ -2625,7 +2620,7 @@ function AutomationSuggestionsPanel({ data, actionId, onCapture, onSimulate, onR
   );
 }
 
-function SensorSimulator({ devices, onToggle }) {
+function SensorSimulator({ devices }) {
   const sensors = [devices.entry_motion, devices.kitchen_presence, devices.study_presence, devices.front_door];
   return (
     <section className="panel sensor-panel">
@@ -2635,10 +2630,10 @@ function SensorSimulator({ devices, onToggle }) {
       </div>
       <div className="sensor-grid">
         {sensors.map((sensor) => (
-          <button className="sensor-button" key={sensor.id} type="button" onClick={() => onToggle(sensor.id)}>
+          <div className="sensor-card" key={sensor.id} aria-label={`${sensor.name}：${deviceStateLabel(sensor)}`}>
             <span>{sensor.name.replace("传感器", "")}</span>
             <strong>{deviceStateLabel(sensor)}</strong>
-          </button>
+          </div>
         ))}
       </div>
     </section>
