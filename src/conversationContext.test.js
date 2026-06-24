@@ -26,6 +26,29 @@ describe("conversation context", () => {
     expect(isReferentialControlInput("关一下")).toBe(true);
   });
 
+  it("keeps conversation focus after a dry-run command", () => {
+    const store = createConversationContextStore();
+    store.record("session-1", {
+      input: "打开书房射灯",
+      plan: {
+        intent: "turn_on_study_spotlight",
+        intentType: "device_control",
+        actions: [{
+          thingId: "study_panel",
+          thingName: "书房射灯",
+          logicalAssetId: "asset_study_spot",
+          logicalAssetName: "书房射灯",
+          logicalRoomId: "study",
+        }],
+      },
+      execution: { status: "dry_run" },
+    });
+
+    expect(store.get("session-1").focusedTargets).toEqual([
+      { id: "asset_study_spot", name: "书房射灯", roomId: "study" },
+    ]);
+  });
+
   it("does not replace focus after a failed command", () => {
     const store = createConversationContextStore();
     store.record("session-1", {

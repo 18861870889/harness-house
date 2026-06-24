@@ -4,9 +4,9 @@
 
 Harness House 是一个开源智能家居 AI 框架，目标不是替代 Home Assistant，而是在 Home Assistant、米家、Matter、Tuya 等设备承载层之上，提供统一的家庭能力模型、AI 意图理解、安全执行、调试模拟和持续学习能力。
 
-当前进度：`v0.23`
+当前进度：`v0.24`
 
-当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)。
+当前状态和近期计划见 [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)，发布检查见 [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md)。
 
 ## Core Idea
 
@@ -126,6 +126,9 @@ Provider Raw Graph
 
 ### Safety & Debugging
 
+- Runtime Gate 默认把 HCM 真实指令置为 dry-run；只有显式设置 `HARNESS_EXECUTION_MODE=real` 并重启服务后，低风险动作才允许进入 provider 执行。
+- `/api/runtime/status` 暴露当前执行模式、发布门状态、阻塞项和注意项。
+- 控制台 Header 和右侧 Runtime Gate 面板会显示当前是 `Dry-run` 还是 `Real`，避免误触真实设备。
 - Safety Gate 拦截未知设备、未知能力、只读 sensor、高风险能力。
 - HA Service Simulator 在真实执行前模拟 service call。
 - 支持根据 `media_player.supported_features` 选择 `media_pause` / `media_stop` / `turn_off`。
@@ -246,6 +249,20 @@ OPENAI_MODEL=deepseek-v4-flash
 ```bash
 HA_BASE_URL=http://homeassistant.local:8123
 HA_TOKEN=your_home_assistant_long_lived_access_token
+```
+
+### Runtime Safety
+
+默认不会控制真实设备：
+
+```bash
+HARNESS_EXECUTION_MODE=dry_run
+```
+
+只有在你明确要做真实低风险设备测试时，再切换并重启服务：
+
+```bash
+HARNESS_EXECUTION_MODE=real
 ```
 
 本地运行态文件默认写入：

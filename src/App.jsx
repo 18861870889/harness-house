@@ -64,6 +64,7 @@ import {
   getHcmHome,
   getLearningMemory,
   getOnboardingPlan,
+  getRuntimeStatus,
   recordOnboardingSnapshot,
   previewAutomationSuggestion,
   replayCommandAudit,
@@ -214,6 +215,7 @@ export default function App() {
     mode: "simulated",
     model: "simulated",
   });
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [hcmHome, setHcmHome] = useState(null);
   const [onboardingPlan, setOnboardingPlan] = useState(null);
   const [hcmStatus, setHcmStatus] = useState({
@@ -307,6 +309,7 @@ export default function App() {
 
   useEffect(() => {
     getLlmStatus().then(setLlmStatus);
+    getRuntimeStatus().then(setRuntimeStatus).catch(() => setRuntimeStatus(null));
   }, []);
 
   useEffect(() => {
@@ -648,6 +651,7 @@ export default function App() {
           currentRoomId,
           selectedRoomId,
           sessionId: sessionIdRef.current,
+          dryRun: runtimeStatus?.execution?.mode !== "real",
           source,
         });
         if (
@@ -744,8 +748,10 @@ export default function App() {
         ? result.plan?.stateQuery?.summary || result.plan?.summary || "状态已读取。"
         : result.status === "no_action"
           ? result.plan?.summary || "没有找到可执行动作。"
-          : result.status === "executed"
+        : result.status === "executed"
             ? `真实设备已执行：${accepted.map((item) => `${item.thingName} ${item.capabilityName}`).join("；")}`
+            : result.status === "dry_run"
+              ? `已完成模拟校验，未控制真实设备：${result.plan?.summary ?? "计划可查看。"}`
             : result.status === "needs_clarification"
               ? result.plan?.summary || "目标或能力尚不明确，需要补充信息。"
             : result.status === "partial_failure"
@@ -943,6 +949,7 @@ export default function App() {
         currentRoomId={currentRoomId}
         activeCount={activeDevices.length}
         llmStatus={llmStatus}
+        runtimeStatus={runtimeStatus}
         sceneRooms={houseSceneModel.rooms}
         activeView={activeView}
         onViewChange={handleViewChange}
@@ -1001,6 +1008,7 @@ export default function App() {
           onToggleListening={toggleListening}
           onToggleTts={toggleTts}
         />
+        <RuntimeGuardPanel runtimeStatus={runtimeStatus} />
         <PendingPlan plan={pendingPlan} onConfirm={confirmPending} onCancel={cancelPending} />
         <PlanPreview plan={lastPlan} />
         <IntelligencePanel
@@ -1062,7 +1070,10 @@ function RailHeader({ eyebrow, title, meta, icon: Icon }) {
   );
 }
 
-function Header({ currentRoomId, activeCount, llmStatus, sceneRooms, activeView, onViewChange }) {
+function Header({ currentRoomId, activeCount, llmStatus, runtimeStatus, sceneRooms, activeView, onViewChange }) {
+  const executionMode = runtimeStatus?.execution;
+  const releaseStatus = runtimeStatus?.release?.status ?? "unknown";
+  const releaseLabel = formatReleaseStatus(releaseStatus);
   return (
     <header className="product-header">
       <div className="mark">
@@ -1072,9 +1083,9 @@ function Header({ currentRoomId, activeCount, llmStatus, sceneRooms, activeView,
         <h1>Harness House</h1>
         <p>Local AI Home Runtime</p>
       </div>
-      <div className="status-pill">
+      <div className={`status-pill execution-${executionMode?.mode ?? "unknown"}`}>
         <span className="live-dot" />
-        Local
+        {executionMode?.mode === "real" ? "Real" : "Dry-run"}
       </div>
       <div className="view-switch" role="group" aria-label="工作区">
         <button
@@ -1104,8 +1115,61 @@ function Header({ currentRoomId, activeCount, llmStatus, sceneRooms, activeView,
           label="LLM"
           value={llmStatus.configured ? `Real · ${llmStatus.model}` : "Sim fallback"}
         />
+        <Fact
+          icon={ShieldCheck}
+          label="发布门"
+          value={releaseLabel}
+        />
       </div>
     </header>
+  );
+}
+
+function formatReleaseStatus(status) {
+  if (status === "ready") return "可发布";
+  if (status === "ready_with_warnings") return "有注意项";
+  if (status === "blocked") return "已阻塞";
+  return "检查中";
+}
+
+function RuntimeGuardPanel({ runtimeStatus }) {
+  if (!runtimeStatus) {
+    return (
+      <section className="panel runtime-panel">
+        <div className="panel-title">
+          <ShieldCheck size={17} />
+          <h2>Runtime Gate</h2>
+        </div>
+        <p className="hcm-note">正在读取运行安全状态...</p>
+      </section>
+    );
+  }
+  const execution = runtimeStatus.execution;
+  const release = runtimeStatus.release;
+  const checks = runtimeStatus.checks ?? [];
+  const releaseLabel = formatReleaseStatus(release.status);
+  return (
+    <section className={`panel runtime-panel mode-${execution.mode}`}>
+      <div className="panel-title">
+        <ShieldCheck size={17} />
+        <h2>Runtime Gate</h2>
+        <span className={`runtime-status-badge status-${release.status}`}>{releaseLabel}</span>
+      </div>
+      <div className="runtime-mode">
+        <strong>{execution.label}</strong>
+        <span>{execution.description}</span>
+      </div>
+      <div className="runtime-checks">
+        {checks.slice(0, 5).map((item) => (
+          <div className={`runtime-check status-${item.status}`} key={item.id}>
+            <span>{item.label}</span>
+            <strong>{item.status === "pass" ? "通过" : item.status === "warning" ? "注意" : "阻塞"}</strong>
+            <small>{item.message}</small>
+          </div>
+        ))}
+      </div>
+      {execution.mode !== "real" && <p className="runtime-hint">{execution.enableHint}</p>}
+    </section>
   );
 }
 

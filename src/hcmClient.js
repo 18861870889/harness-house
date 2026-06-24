@@ -8,6 +8,10 @@ export async function getHcmHome() {
   return payload;
 }
 
+export async function getRuntimeStatus() {
+  return fetchJson("/api/runtime/status");
+}
+
 export async function updateHcmBindingOverride({ providerId, entityId, action }) {
   const response = await fetch("/api/hcm/overrides/bindings", {
     method: "POST",

@@ -264,6 +264,24 @@ button {
   background: rgba(37, 141, 102, 0.08);
 }
 
+.status-pill.execution-real {
+  border-color: rgba(199, 138, 36, 0.3);
+  color: var(--amber);
+  background: rgba(199, 138, 36, 0.1);
+}
+
+.status-pill.execution-real .live-dot {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px rgba(199, 138, 36, 0.16);
+}
+
+.status-pill.execution-dry_run,
+.status-pill.execution-unknown {
+  border-color: rgba(45, 140, 103, 0.24);
+  color: var(--green);
+  background: rgba(45, 140, 103, 0.08);
+}
+
 .live-dot {
   width: 7px;
   height: 7px;
@@ -275,7 +293,7 @@ button {
 .header-facts {
   grid-column: auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -427,6 +445,129 @@ button {
 
 .agent-mode strong {
   color: var(--cyan);
+}
+
+.runtime-panel {
+  border-color: rgba(59, 126, 156, 0.16);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.runtime-panel.mode-real {
+  border-color: rgba(199, 138, 36, 0.26);
+  background: rgba(255, 250, 240, 0.82);
+}
+
+.runtime-status-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid rgba(69, 111, 104, 0.18);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.runtime-status-badge.status-ready {
+  border-color: rgba(45, 140, 103, 0.24);
+  color: var(--green);
+  background: rgba(45, 140, 103, 0.08);
+}
+
+.runtime-status-badge.status-ready_with_warnings {
+  border-color: rgba(199, 138, 36, 0.28);
+  color: var(--amber);
+  background: rgba(199, 138, 36, 0.1);
+}
+
+.runtime-status-badge.status-blocked {
+  border-color: rgba(217, 88, 82, 0.24);
+  color: var(--red);
+  background: rgba(217, 88, 82, 0.08);
+}
+
+.runtime-mode {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 9px;
+  padding: 9px;
+  border: 1px solid rgba(22, 143, 131, 0.16);
+  border-radius: 8px;
+  background: rgba(243, 248, 251, 0.78);
+}
+
+.runtime-mode strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.runtime-mode span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.runtime-checks {
+  display: grid;
+  gap: 6px;
+}
+
+.runtime-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.14);
+  border-radius: 8px;
+  background: rgba(248, 251, 250, 0.72);
+}
+
+.runtime-check span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-check strong {
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.runtime-check small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.runtime-check.status-pass strong {
+  color: var(--green);
+}
+
+.runtime-check.status-warning strong {
+  color: var(--amber);
+}
+
+.runtime-check.status-blocker strong {
+  color: var(--red);
+}
+
+.runtime-hint {
+  margin: 9px 0 0;
+  padding: 8px;
+  border: 1px dashed rgba(199, 138, 36, 0.32);
+  border-radius: 8px;
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.45;
+  background: rgba(255, 250, 240, 0.72);
 }
 
 .agent-grid {
@@ -2877,7 +3018,7 @@ button {
   }
 
   .header-facts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .fact {

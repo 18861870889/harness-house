@@ -49,6 +49,7 @@ import {
   summarizeLearningMemory,
   updateLearningCandidate,
 } from "./src/learningLayer.js";
+import { buildRuntimeStatus, getExecutionMode } from "./src/releaseGate.js";
 
 const app = express();
 loadLocalEnv();
@@ -67,6 +68,16 @@ const activeProviderAdapter = providerRegistry.get(HOME_ASSISTANT_ADAPTER_ID);
 const conversationContextStore = createConversationContextStore();
 
 app.use(express.json({ limit: "256kb" }));
+
+app.get("/api/runtime/status", (_request, response) => {
+  response.json(buildRuntimeStatus({
+    env: process.env,
+    haConfigured: homeAssistantAdapter.isConfigured(),
+    llmConfigured: Boolean(process.env.OPENAI_API_KEY),
+    hasOnboardingBaseline: Boolean(readProviderSnapshotRecord()?.graph),
+    commandAuditEnabled: Boolean(commandAuditPath),
+  }));
+});
 
 app.get("/api/llm/status", (_request, response) => {
   response.json({
@@ -704,6 +715,8 @@ function updateLearningMemory(auditEntry) {
 }
 
 async function runHcmCommandPipeline(payload) {
+  const executionMode = getExecutionMode(process.env);
+  const effectiveDryRun = Boolean(payload.dryRun) || !executionMode.realExecutionEnabled || Boolean(payload.replayOf);
   if (!homeAssistantAdapter.isConfigured()) {
     const error = new Error("Home Assistant adapter is not configured. Set HA_BASE_URL and HA_TOKEN.");
     error.statusCode = 503;
@@ -719,7 +732,7 @@ async function runHcmCommandPipeline(payload) {
     input: payload.input,
     path: "hcm-real",
     source: payload.source || (payload.replayOf ? "replay" : "text"),
-    dryRun: Boolean(payload.dryRun),
+    dryRun: effectiveDryRun,
     replayOf: payload.replayOf,
   });
 
@@ -919,7 +932,9 @@ async function runHcmCommandPipeline(payload) {
     );
     const execution = {
       status: "planned",
-      dryRun: Boolean(payload.dryRun),
+      dryRun: effectiveDryRun,
+      requestedDryRun: Boolean(payload.dryRun),
+      executionMode,
       accepted: policyPlan.accepted.map((item) => formatAcceptedExecution(item, serviceSimulation)),
       rejected: [...policyPlan.rejected, ...serviceSimulation.rejected],
       simulation: serviceSimulation,
@@ -945,8 +960,11 @@ async function runHcmCommandPipeline(payload) {
       execution.status = "rejected";
     } else if (!serviceSimulation.ok) {
       execution.status = "rejected";
-    } else if (payload.dryRun) {
+    } else if (effectiveDryRun) {
       execution.status = "dry_run";
+      execution.guard = executionMode.realExecutionEnabled
+        ? "requested_dry_run"
+        : "real_execution_disabled";
     } else {
       execution.status = "executing";
       const rawResults = await runCommandStage(
@@ -974,7 +992,7 @@ async function runHcmCommandPipeline(payload) {
       execution.status = execution.results.every((result) => result.ok && result.verification?.ok) ? "executed" : "partial_failure";
     }
 
-    const conversationAfter = !payload.dryRun && payload.source !== "replay"
+    const conversationAfter = payload.source !== "replay"
       ? conversationContextStore.record(payload.sessionId, { input: payload.input, plan, execution })
       : conversation;
 

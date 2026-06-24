@@ -1,10 +1,10 @@
 # Current Status
 
-> Last updated: 2026-06-23. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
+> Last updated: 2026-06-24. This document is the short source of truth for current progress, near-term plans, and safety boundaries.
 
 ## Current Version
 
-Current engineering progress: `v0.23`.
+Current engineering progress: `v0.24`.
 
 Completed major runtime capabilities:
 
@@ -42,6 +42,7 @@ Completed major runtime capabilities:
 - Semantic Grounding Resolver for converting model semantic targets into HCM logical assets while preserving ambiguity.
 - Decision Review stage after policy/provider simulation and before any authorized provider execution.
 - Household Learning Context that feeds shadow learning back into planner guidance without auto-applying rules.
+- Runtime Gate with default dry-run execution, release readiness checks, and visible UI/API execution mode.
 
 `v0.10 Real Home Pilot` is intentionally not marked complete. It requires real-home observation over time and user-authorized low-risk device testing.
 
@@ -175,10 +176,24 @@ Status: implemented and covered by local tests.
 
 Boundary: v0.23 is still guidance, not autonomous rule mutation.
 
+## v0.24 Runtime Gate & Release Safety
+
+Status: implemented and covered by local tests.
+
+- Added `HARNESS_EXECUTION_MODE` as the explicit runtime switch for real provider execution.
+- Default mode is `dry_run`; HCM commands still plan, simulate, review, audit, and explain, but do not touch real devices.
+- The backend enforces dry-run even if the frontend forgets to send `dryRun: true`.
+- `/api/runtime/status` reports execution mode, release target, blockers, warnings, and next gaps.
+- The control UI shows `Dry-run` / `Real` in the header and a Runtime Gate panel in the right rail.
+- Release readiness currently requires LLM config, HA config, command audit, and the default safety gates.
+
+Boundary: this is not a public production release. It is a local/internal alpha guardrail so iteration and demonstrations cannot accidentally control real devices.
+
 ## Current Runtime Chain
 
 ```text
 User Command
+  -> Runtime Execution Mode
   -> Conversation Context
   -> Context Snapshot
   -> HCM Overlay + Personal Semantics
@@ -204,6 +219,7 @@ User Command
 Key boundaries:
 
 - LLM understands intent; it does not own service selection or final execution permission.
+- Runtime Gate decides whether an otherwise valid provider plan may execute or must remain dry-run.
 - HCM is the upper-layer model; provider entities must not leak directly into planner/runtime code.
 - Safety Gate answers whether a capability is executable.
 - Policy Gate answers whether this context should execute it.
