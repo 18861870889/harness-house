@@ -266,6 +266,8 @@ HARNESS_EXECUTION_MODE=dry_run
 HARNESS_EXECUTION_MODE=real
 ```
 
+前端 `Command` 面板还有一个“本次执行：模拟 / 真实”开关。后端未设置 `HARNESS_EXECUTION_MODE=real` 时，真实按钮会被锁定；后端已开启 real 后，页面仍默认使用“模拟”，需要手动切到“真实”才会让本次自然语言指令尝试控制低风险真实设备。
+
 本地运行态文件默认写入：
 
 ```text

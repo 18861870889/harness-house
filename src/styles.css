@@ -1034,6 +1034,84 @@ button {
   color: var(--amber);
 }
 
+.execution-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 0;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.15);
+  border-radius: 8px;
+  background: rgba(247, 250, 249, 0.72);
+}
+
+.execution-control.mode-real {
+  border-color: rgba(199, 138, 36, 0.28);
+  background: rgba(255, 250, 240, 0.82);
+}
+
+.execution-control strong,
+.execution-control span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-control strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.execution-control span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.execution-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  width: 104px;
+  padding: 3px;
+  border: 1px solid rgba(69, 111, 104, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.execution-segmented button {
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  background: transparent;
+  cursor: pointer;
+}
+
+.execution-segmented button.selected {
+  color: #287a5a;
+  background: #e4f3ef;
+}
+
+.execution-control.mode-real .execution-segmented button.selected {
+  color: #9a6418;
+  background: rgba(251, 191, 36, 0.18);
+}
+
+.execution-segmented button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .shadow-badge {
   margin-left: auto;
   color: var(--amber);

@@ -104,6 +104,10 @@ const APP_VIEWS = {
   CONTROL: "control",
   MAP_EDITOR: "map-editor",
 };
+const COMMAND_EXECUTION_PREFERENCE = {
+  DRY_RUN: "dry_run",
+  REAL: "real",
+};
 
 function makeMessage(role, content, meta = {}) {
   return {
@@ -219,6 +223,7 @@ export default function App() {
     model: "simulated",
   });
   const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [executionPreference, setExecutionPreference] = useState(COMMAND_EXECUTION_PREFERENCE.DRY_RUN);
   const [hcmHome, setHcmHome] = useState(null);
   const [onboardingPlan, setOnboardingPlan] = useState(null);
   const [hcmStatus, setHcmStatus] = useState({
@@ -253,6 +258,11 @@ export default function App() {
   const lastSpokenMessageIdRef = useRef(null);
   const speechInput = useMemo(() => createBrowserSpeechInput(), []);
   const speechOutput = useMemo(() => createBrowserSpeechOutput(), []);
+  const realExecutionAvailable = runtimeStatus?.execution?.mode === "real";
+  const effectiveCommandMode =
+    realExecutionAvailable && executionPreference === COMMAND_EXECUTION_PREFERENCE.REAL
+      ? COMMAND_EXECUTION_PREFERENCE.REAL
+      : COMMAND_EXECUTION_PREFERENCE.DRY_RUN;
 
   useEffect(() => {
     const handleHashChange = () => setActiveView(readAppView());
@@ -739,7 +749,7 @@ export default function App() {
           currentRoomId,
           selectedRoomId,
           sessionId: sessionIdRef.current,
-          dryRun: runtimeStatus?.execution?.mode !== "real",
+          dryRun: effectiveCommandMode !== COMMAND_EXECUTION_PREFERENCE.REAL,
           source,
         });
         if (
@@ -1096,6 +1106,13 @@ export default function App() {
           ttsSupported={speechOutput.supported}
           onToggleListening={toggleListening}
           onToggleTts={toggleTts}
+          executionControl={{
+            preference: executionPreference,
+            effectiveMode: effectiveCommandMode,
+            realAvailable: realExecutionAvailable,
+            backendMode: runtimeStatus?.execution?.mode ?? "unknown",
+          }}
+          onExecutionPreferenceChange={setExecutionPreference}
         />
         <RuntimeGuardPanel runtimeStatus={runtimeStatus} />
         <PendingPlan plan={pendingPlan} onConfirm={confirmPending} onCancel={cancelPending} />
@@ -2424,7 +2441,19 @@ function CommandConsole({
   ttsSupported,
   onToggleListening,
   onToggleTts,
+  executionControl,
+  onExecutionPreferenceChange,
 }) {
+  const realSelected = executionControl?.preference === COMMAND_EXECUTION_PREFERENCE.REAL;
+  const realAvailable = Boolean(executionControl?.realAvailable);
+  const effectiveReal = executionControl?.effectiveMode === COMMAND_EXECUTION_PREFERENCE.REAL;
+  const executionHint = effectiveReal
+    ? "真实控制低风险设备"
+    : realSelected && !realAvailable
+      ? "后端未开启 Real，仍会模拟"
+      : realAvailable
+        ? "后端已允许 Real，本次仍模拟"
+        : "只规划、模拟和审计";
   return (
     <section className="panel console-panel">
       <div className="panel-title">
@@ -2449,6 +2478,31 @@ function CommandConsole({
             title={ttsSupported ? (speechState.ttsEnabled ? "关闭语音播报" : "开启语音播报") : "当前浏览器不支持语音播报"}
           >
             {speechState.ttsEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+          </button>
+        </div>
+      </div>
+      <div className={`execution-control ${effectiveReal ? "mode-real" : "mode-dry"}`}>
+        <div>
+          <strong>本次执行</strong>
+          <span>{executionHint}</span>
+        </div>
+        <div className="execution-segmented" role="group" aria-label="本次执行模式">
+          <button
+            className={executionControl?.preference !== COMMAND_EXECUTION_PREFERENCE.REAL ? "selected" : ""}
+            type="button"
+            onClick={() => onExecutionPreferenceChange(COMMAND_EXECUTION_PREFERENCE.DRY_RUN)}
+            title="只做计划、模拟、审计，不控制真实设备"
+          >
+            模拟
+          </button>
+          <button
+            className={realSelected ? "selected" : ""}
+            type="button"
+            onClick={() => onExecutionPreferenceChange(COMMAND_EXECUTION_PREFERENCE.REAL)}
+            disabled={!realAvailable}
+            title={realAvailable ? "允许通过安全链路后的低风险动作真实执行" : "需要先设置 HARNESS_EXECUTION_MODE=real 并重启服务"}
+          >
+            真实
           </button>
         </div>
       </div>
