@@ -50,6 +50,7 @@ import {
   updateLearningCandidate,
 } from "./src/learningLayer.js";
 import { buildRuntimeStatus, getExecutionMode } from "./src/releaseGate.js";
+import { createSpatialEditorState, hasSpatialEditorEdits } from "./src/spatialHomeEditor.js";
 
 const app = express();
 loadLocalEnv();
@@ -59,6 +60,7 @@ const commandAuditPath = resolve(process.cwd(), process.env.HARNESS_COMMAND_AUDI
 const learningMemoryPath = resolve(process.cwd(), process.env.HARNESS_LEARNING_MEMORY_PATH || "data/learning-memory.local.json");
 const providerSnapshotPath = resolve(process.cwd(), process.env.HARNESS_PROVIDER_SNAPSHOT_PATH || "data/provider-snapshot.local.json");
 const automationMemoryPath = resolve(process.cwd(), process.env.HARNESS_AUTOMATION_MEMORY_PATH || "data/automation-memory.local.json");
+const spatialEditorPath = resolve(process.cwd(), process.env.HARNESS_SPATIAL_EDITOR_PATH || "data/spatial-editor.local.json");
 const homeAssistantAdapter = createHomeAssistantAdapter({
   baseUrl: process.env.HA_BASE_URL || process.env.HOME_ASSISTANT_URL,
   token: process.env.HA_TOKEN || process.env.HOME_ASSISTANT_TOKEN,
@@ -67,7 +69,7 @@ const providerRegistry = createProviderAdapterRegistry([homeAssistantAdapter]);
 const activeProviderAdapter = providerRegistry.get(HOME_ASSISTANT_ADAPTER_ID);
 const conversationContextStore = createConversationContextStore();
 
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "20mb" }));
 
 app.get("/api/runtime/status", (_request, response) => {
   response.json(buildRuntimeStatus({
@@ -77,6 +79,42 @@ app.get("/api/runtime/status", (_request, response) => {
     hasOnboardingBaseline: Boolean(readProviderSnapshotRecord()?.graph),
     commandAuditEnabled: Boolean(commandAuditPath),
   }));
+});
+
+app.get("/api/spatial-editor/state", (_request, response) => {
+  const record = readSpatialEditorRecord();
+  response.json({
+    exists: Boolean(record),
+    updatedAt: record?.updatedAt ?? null,
+    source: record?.source ?? "default",
+    hasEdits: hasSpatialEditorEdits(record?.state),
+    state: createSpatialEditorState(record?.state),
+  });
+});
+
+app.put("/api/spatial-editor/state", (request, response) => {
+  try {
+    const payload = request.body ?? {};
+    validateSpatialEditorStateRequest(payload);
+    const record = {
+      version: "0.1",
+      updatedAt: new Date().toISOString(),
+      source: typeof payload.source === "string" && payload.source.trim() ? payload.source.trim() : "browser",
+      state: createSpatialEditorState(payload.state),
+    };
+    writeSpatialEditorRecord(record);
+    response.json({
+      exists: true,
+      updatedAt: record.updatedAt,
+      source: record.source,
+      hasEdits: hasSpatialEditorEdits(record.state),
+      state: record.state,
+    });
+  } catch (error) {
+    response.status(error.statusCode || 400).json({
+      error: error.message || "Spatial editor state update failed",
+    });
+  }
 });
 
 app.get("/api/llm/status", (_request, response) => {
@@ -632,6 +670,16 @@ function validateReplayRequest(payload) {
   }
 }
 
+function validateSpatialEditorStateRequest(payload) {
+  if (!payload || typeof payload !== "object") throw badRequest("Invalid JSON body");
+  if (!payload.state || typeof payload.state !== "object" || Array.isArray(payload.state)) {
+    throw badRequest("state is required");
+  }
+  if (payload.source !== undefined && typeof payload.source !== "string") {
+    throw badRequest("source must be a string");
+  }
+}
+
 function readHcmOverlay() {
   if (!existsSync(hcmOverlayPath)) return createHcmOverlay();
   try {
@@ -644,6 +692,26 @@ function readHcmOverlay() {
 function writeHcmOverlay(overlay) {
   mkdirSync(dirname(hcmOverlayPath), { recursive: true });
   writeFileSync(hcmOverlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
+}
+
+function readSpatialEditorRecord() {
+  if (!existsSync(spatialEditorPath)) return null;
+  try {
+    const record = JSON.parse(readFileSync(spatialEditorPath, "utf8"));
+    return {
+      version: typeof record.version === "string" ? record.version : "0.1",
+      updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : null,
+      source: typeof record.source === "string" ? record.source : "unknown",
+      state: createSpatialEditorState(record.state),
+    };
+  } catch (error) {
+    throw new Error(`Spatial editor file is invalid JSON: ${error.message}`);
+  }
+}
+
+function writeSpatialEditorRecord(record) {
+  mkdirSync(dirname(spatialEditorPath), { recursive: true });
+  writeFileSync(spatialEditorPath, `${JSON.stringify(record, null, 2)}\n`);
 }
 
 function writeCommandAuditEntry(entry) {

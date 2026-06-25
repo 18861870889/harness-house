@@ -119,7 +119,8 @@ Status: implemented for the local editor scope.
 - Separates room assignment from map placement so a device can be assigned but unplaced, placed but unassigned, fully organized, or still unorganized.
 - Shows HCM logical assets and physical switch controllers as different roles instead of forcing multi-gang switches into the same object as the lights they control.
 - Supports two naming modes: `room + provider/HCM default name` and `room + custom device name`.
-- Stores editor state in browser local storage only; it does not write Home Assistant, overlay files, or provider mappings.
+- Stores editor state in the local Harness service file `data/spatial-editor.local.json`; browser local storage is kept only as a backward-compatible migration/cache layer.
+- The same localhost instance now shares spatial edits across Chrome, the Codex in-app browser, and other browser contexts.
 - Covered by `src/spatialHomeEditor.test.js`; automated validation remains dry-run/read-only and does not control real devices.
 
 ## v0.19 Assisted Mapping And 2D/3D Sync
@@ -127,7 +128,7 @@ Status: implemented for the local editor scope.
 Status: implemented for local suggestions and digital-twin projection.
 
 - Generates explainable placement suggestions from HCM semantic rooms, controller installation rooms, and current map placement.
-- Suggestions can be accepted or dismissed locally; accepting them updates only the browser spatial editor state.
+- Suggestions can be accepted or dismissed locally; accepting them updates only the Harness spatial editor state file.
 - Accepted room names, room assignments, and map coordinates are projected into the 3D scene model before digital-twin layers are applied.
 - 3D room/device labels and device positions now reflect confirmed spatial edits while the command runtime still uses HCM identities and policy gates.
 - Existing v0.18B local storage is migrated into the v0.19 state shape.

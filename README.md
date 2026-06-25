@@ -116,7 +116,8 @@ Provider Raw Graph
 ### Spatial Home Model Editor
 
 - 左侧新增本地空间编辑器，用于维护“房间语义、地图位置、设备命名”的家庭空间模型。
-- 支持上传户型图；空间状态存储在浏览器本地，不写 provider，也不控制真实设备。
+- 支持上传户型图；空间状态保存到本地服务文件 `data/spatial-editor.local.json`，浏览器 localStorage 仅作为旧版本兼容缓存。
+- Chrome、Codex 内置浏览器等不同浏览器会共享同一份本地空间配置。
 - 设备分为 `已分配已放置`、`已分配待定位`、`已放置待归房`、`未拖入未分配` 四类。
 - 逻辑设备和物理控制器分开展示：例如 `书房射灯` 是生活视图里的受控对象，`书房三键开关` 是维护视图里的执行路径。
 - 支持两种命名规则：`房间 + HA/HCM 默认名`、`房间 + 自定义设备名`。
@@ -273,6 +274,7 @@ data/command-audit.local.jsonl
 data/learning-memory.local.json
 data/provider-snapshot.local.json
 data/automation-memory.local.json
+data/spatial-editor.local.json
 ```
 
 这些文件是本地家庭状态和用户偏好数据，不应提交到 GitHub。

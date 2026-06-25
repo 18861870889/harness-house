@@ -40,6 +40,23 @@ export function createSpatialEditorState(base = {}) {
   };
 }
 
+export function hasSpatialEditorEdits(state = {}) {
+  const editorState = createSpatialEditorState(state);
+  return Boolean(
+    editorState.floorPlanImage ||
+      editorState.floorPlanImageName ||
+      editorState.floorPlanImageSize > 0 ||
+      Object.keys(editorState.roomNames).length > 0 ||
+      Object.keys(editorState.roomRects).length > 0 ||
+      editorState.customRooms.length > 0 ||
+      Object.keys(editorState.deviceAssignments).length > 0 ||
+      Object.keys(editorState.devicePlacements).length > 0 ||
+      Object.keys(editorState.customDeviceNames).length > 0 ||
+      editorState.dismissedSuggestionIds.length > 0 ||
+      editorState.namingMode !== NAMING_MODES.ROOM_DEFAULT
+  );
+}
+
 export function createSpatialEditorModel({ hcmHome, sceneModel, state } = {}) {
   const editorState = createSpatialEditorState(state);
   const rooms = normalizeEditorRooms(sceneModel?.rooms ?? [], editorState);

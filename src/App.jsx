@@ -45,6 +45,7 @@ import {
   createSpatialEditorState,
   dismissSpatialSuggestion,
   findSpatialRoomAtPoint,
+  hasSpatialEditorEdits,
   migrateSpatialEditorStateToImageCoordinates,
   NAMING_MODES,
   placeSpatialDevice,
@@ -65,10 +66,12 @@ import {
   getLearningMemory,
   getOnboardingPlan,
   getRuntimeStatus,
+  getSpatialEditorState,
   recordOnboardingSnapshot,
   previewAutomationSuggestion,
   replayCommandAudit,
   runHcmCommand,
+  saveSpatialEditorState,
   updateLearningCandidate,
   updateAutomationSuggestion,
   updateHcmThingOverride,
@@ -239,7 +242,14 @@ export default function App() {
     ttsEnabled: true,
   });
   const [spatialEditorState, setSpatialEditorState] = useState(readSpatialEditorState);
+  const [spatialSyncStatus, setSpatialSyncStatus] = useState({
+    state: "local",
+    source: "localStorage",
+    updatedAt: null,
+    error: null,
+  });
   const inputRef = useRef(null);
+  const spatialRemoteReadyRef = useRef(false);
   const lastSpokenMessageIdRef = useRef(null);
   const speechInput = useMemo(() => createBrowserSpeechInput(), []);
   const speechOutput = useMemo(() => createBrowserSpeechOutput(), []);
@@ -386,7 +396,85 @@ export default function App() {
   }, [refreshIntelligence]);
 
   useEffect(() => {
-    writeSpatialEditorState(spatialEditorState);
+    let cancelled = false;
+    const localState = readSpatialEditorState();
+    getSpatialEditorState()
+      .then(async (record) => {
+        if (cancelled) return;
+        const remoteState = createSpatialEditorState(record.state);
+        if (record.exists && record.hasEdits) {
+          setSpatialEditorState(remoteState);
+          writeSpatialEditorState(remoteState);
+          setSpatialSyncStatus({
+            state: "synced",
+            source: record.source || "server",
+            updatedAt: record.updatedAt,
+            error: null,
+          });
+        } else if (hasSpatialEditorEdits(localState)) {
+          const migrated = await saveSpatialEditorState({
+            state: localState,
+            source: "localStorage_migration",
+          });
+          if (cancelled) return;
+          setSpatialSyncStatus({
+            state: "synced",
+            source: migrated.source,
+            updatedAt: migrated.updatedAt,
+            error: null,
+          });
+        } else {
+          setSpatialSyncStatus({
+            state: "synced",
+            source: "server",
+            updatedAt: record.updatedAt,
+            error: null,
+          });
+        }
+        spatialRemoteReadyRef.current = true;
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        spatialRemoteReadyRef.current = true;
+        setSpatialSyncStatus({
+          state: "local",
+          source: "localStorage",
+          updatedAt: null,
+          error: error.message,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const normalized = createSpatialEditorState(spatialEditorState);
+    writeSpatialEditorState(normalized);
+    if (!spatialRemoteReadyRef.current) return;
+    const timer = setTimeout(() => {
+      setSpatialSyncStatus((current) => ({ ...current, state: "saving", error: null }));
+      saveSpatialEditorState({
+        state: normalized,
+        source: "browser",
+      })
+        .then((record) => {
+          setSpatialSyncStatus({
+            state: "synced",
+            source: record.source,
+            updatedAt: record.updatedAt,
+            error: null,
+          });
+        })
+        .catch((error) => {
+          setSpatialSyncStatus((current) => ({
+            ...current,
+            state: "error",
+            error: error.message,
+          }));
+        });
+    }, 500);
+    return () => clearTimeout(timer);
   }, [spatialEditorState]);
 
   const applyDefaultRun = useCallback(async () => {
@@ -932,6 +1020,7 @@ export default function App() {
         <MapEditorWorkspace
           model={spatialEditorModel}
           state={spatialEditorState}
+          syncStatus={spatialSyncStatus}
           selectedRoomId={selectedRoomId}
           hcmStatus={hcmStatus}
           onStateChange={setSpatialEditorState}
@@ -1132,6 +1221,13 @@ function formatReleaseStatus(status) {
   return "检查中";
 }
 
+function formatSpatialSyncStatus(syncStatus) {
+  if (syncStatus?.state === "saving") return "正在保存到本地服务";
+  if (syncStatus?.state === "synced") return "已保存到本地服务，跨浏览器生效";
+  if (syncStatus?.state === "error") return "保存到服务失败，仅本浏览器缓存";
+  return "正在同步空间配置";
+}
+
 function RuntimeGuardPanel({ runtimeStatus }) {
   if (!runtimeStatus) {
     return (
@@ -1173,7 +1269,7 @@ function RuntimeGuardPanel({ runtimeStatus }) {
   );
 }
 
-function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateChange, onSelectRoom, onBack, onRefresh }) {
+function MapEditorWorkspace({ model, state, syncStatus, selectedRoomId, hcmStatus, onStateChange, onSelectRoom, onBack, onRefresh }) {
   const editedRoomCount = model.rooms.filter((room) => room.spatialSource === "editor").length;
   return (
     <section className="map-workspace-shell">
@@ -1202,7 +1298,7 @@ function MapEditorWorkspace({ model, state, selectedRoomId, hcmStatus, onStateCh
           {state.floorPlanCoordinateMode === "image" && state.floorPlanImageAspectRatio ? "底图比例已锁定" : "正在校准底图比例"}
         </span>
         <span>生效结构：{model.rooms.length} 房间，{editedRoomCount} 个已校准</span>
-        <strong>已自动保存并应用到本地 3D/空间语义</strong>
+        <strong>{formatSpatialSyncStatus(syncStatus)}</strong>
       </div>
       {hcmStatus?.error && <div className="map-workspace-error">{hcmStatus.error}</div>}
       <SpatialHomeEditor

@@ -12,6 +12,7 @@ import {
   createSpatialEditorState,
   dismissSpatialSuggestion,
   findSpatialRoomAtPoint,
+  hasSpatialEditorEdits,
   migrateSpatialEditorStateToImageCoordinates,
   NAMING_MODES,
   placeSpatialDevice,
@@ -63,6 +64,14 @@ function createSwitchControlledHome() {
 }
 
 describe("spatial home editor", () => {
+  it("detects whether an editor state contains user spatial edits", () => {
+    expect(hasSpatialEditorEdits(createSpatialEditorState())).toBe(false);
+    expect(hasSpatialEditorEdits(createSpatialEditorState({ floorPlanImageName: "户型图.png" }))).toBe(true);
+    expect(hasSpatialEditorEdits(updateSpatialRoomName(createSpatialEditorState(), "study", "工作间"))).toBe(true);
+    expect(hasSpatialEditorEdits(placeSpatialDevice(createSpatialEditorState(), "desk_light", { x: 10, y: 20 }))).toBe(true);
+    expect(hasSpatialEditorEdits(createSpatialEditorState({ namingMode: NAMING_MODES.ROOM_CUSTOM }))).toBe(true);
+  });
+
   it("keeps uploaded floor plan metadata in local editor state", () => {
     const state = createSpatialEditorState({
       floorPlanImage: "data:image/png;base64,abc",

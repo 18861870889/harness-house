@@ -12,6 +12,18 @@ export async function getRuntimeStatus() {
   return fetchJson("/api/runtime/status");
 }
 
+export async function getSpatialEditorState() {
+  return fetchJson("/api/spatial-editor/state");
+}
+
+export async function saveSpatialEditorState({ state, source = "browser" }) {
+  return fetchJson("/api/spatial-editor/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state, source }),
+  });
+}
+
 export async function updateHcmBindingOverride({ providerId, entityId, action }) {
   const response = await fetch("/api/hcm/overrides/bindings", {
     method: "POST",
