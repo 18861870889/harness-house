@@ -512,7 +512,7 @@ export default function App() {
         await updateHcmThingOverride({
           providerId: hcmHome?.provider?.id,
           thingId,
-          patch: { disabled: true },
+          patch: { reviewHidden: true },
         });
         await refreshHcmHome();
       } catch (error) {
@@ -1442,7 +1442,8 @@ function HcmCatalog({
           {home.overlay?.bindingOverrideCount > 0 && (
             <div className="overlay-summary">
               已审核 <strong>{home.overlay.bindingOverrideCount}</strong>
-              {home.overlay.disabledThingCount > 0 && <span>隐藏 {home.overlay.disabledThingCount}</span>}
+              {home.overlay.reviewHiddenThingCount > 0 && <span>隐藏建议 {home.overlay.reviewHiddenThingCount}</span>}
+              {home.overlay.disabledThingCount > 0 && <span>禁用 {home.overlay.disabledThingCount}</span>}
             </div>
           )}
           {defaultPolicy?.enabled && (
@@ -1456,6 +1457,7 @@ function HcmCatalog({
           <BindingReview
             review={home.review}
             reviewSurfaceCount={home.capabilitySummary?.reviewSurfaceCount}
+            hiddenThingIds={home.overlay?.reviewHiddenThingIds}
             onHideThing={onHideThing}
             actionId={reviewActionId}
           />
@@ -2275,9 +2277,12 @@ function SpatialDeviceDetail({ device, rooms, state, onAssign, onRename, onClear
   );
 }
 
-function BindingReview({ review, reviewSurfaceCount, onHideThing, actionId }) {
+function BindingReview({ review, reviewSurfaceCount, hiddenThingIds = [], onHideThing, actionId }) {
   if (!review || review.total === 0) return null;
-  const recommendations = review.recommendations ?? { totalDevices: 0, bySeverity: {}, devices: [] };
+  const recommendations = {
+    ...(review.recommendations ?? { totalDevices: 0, bySeverity: {}, devices: [] }),
+    hiddenThingIds,
+  };
   const severityItems = Object.entries(recommendations.bySeverity ?? {}).sort(
     ([first], [second]) => severityRank(second) - severityRank(first),
   );
@@ -2308,7 +2313,6 @@ function BindingReview({ review, reviewSurfaceCount, onHideThing, actionId }) {
       </div>
       <AdjustmentRecommendations
         recommendations={recommendations}
-        displayCount={reviewSurfaceCount}
         onHideThing={onHideThing}
         actionId={actionId}
       />
@@ -2323,15 +2327,16 @@ function severityRank(severity) {
   return 0;
 }
 
-function AdjustmentRecommendations({ recommendations, displayCount, onHideThing, actionId }) {
-  const devices = recommendations?.devices ?? [];
+function AdjustmentRecommendations({ recommendations, onHideThing, actionId }) {
+  const hiddenThingIds = new Set(recommendations?.hiddenThingIds ?? []);
+  const devices = (recommendations?.devices ?? []).filter((device) => !hiddenThingIds.has(device.thingId));
   if (devices.length === 0) return null;
 
   return (
     <div className="adjustment-recommendations">
       <div className="recommendation-header">
         <span>建议调整</span>
-        <strong>{displayCount ?? recommendations.totalDevices}</strong>
+        <strong>{devices.length}</strong>
       </div>
       {devices.slice(0, 4).map((device) => (
         <div className={`recommendation-item severity-${device.severity}`} key={device.thingId || device.thingName}>
@@ -2342,7 +2347,7 @@ function AdjustmentRecommendations({ recommendations, displayCount, onHideThing,
             type="button"
             disabled={Boolean(actionId)}
             onClick={() => onHideThing(device.thingId)}
-            title="从 AI 可控家庭模型中隐藏该设备"
+            title="仅从建议调整清单隐藏，不影响地图和设备模型"
           >
             <X size={11} />
             隐藏

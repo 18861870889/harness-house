@@ -80,6 +80,7 @@ export function setThingOverride(
     ...provider.things[thingId],
     ...pickThingOverride(patch),
     disabled: typeof patch.disabled === "boolean" ? patch.disabled : provider.things[thingId]?.disabled,
+    reviewHidden: typeof patch.reviewHidden === "boolean" ? patch.reviewHidden : provider.things[thingId]?.reviewHidden,
     aliases: mergeAliases(provider.things[thingId]?.aliases, patch.aliases),
     updatedAt,
   };
@@ -222,6 +223,15 @@ export function summarizeOverlay(overlay) {
     disabledThingCount: providers.reduce(
       (sum, provider) => sum + Object.values(provider.things ?? {}).filter((thing) => thing.disabled).length,
       0,
+    ),
+    reviewHiddenThingCount: providers.reduce(
+      (sum, provider) => sum + Object.values(provider.things ?? {}).filter((thing) => thing.reviewHidden).length,
+      0,
+    ),
+    reviewHiddenThingIds: providers.flatMap((provider) =>
+      Object.entries(provider.things ?? {})
+        .filter(([, thing]) => thing.reviewHidden)
+        .map(([thingId]) => thingId),
     ),
     decisions,
   };

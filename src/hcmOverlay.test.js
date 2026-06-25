@@ -319,6 +319,21 @@ describe("hcm overlay", () => {
     expect(home.overlay.disabledThingCount).toBe(1);
   });
 
+  it("can hide a thing from review suggestions without removing it from HCM", () => {
+    const overlay = setThingOverride(createHcmOverlay(), {
+      providerId: "home_assistant",
+      thingId: "ha_switch",
+      patch: { reviewHidden: true },
+    });
+
+    const home = applyHcmOverlay(createReviewHome(), overlay);
+
+    expect(home.things).toHaveLength(1);
+    expect(home.overlay.reviewHiddenThingCount).toBe(1);
+    expect(home.overlay.reviewHiddenThingIds).toEqual(["ha_switch"]);
+    expect(home.overlay.disabledThingCount).toBe(0);
+  });
+
   it("persists a confirmed logical asset mapping separately from HA entity policy", () => {
     const overlay = setControlEndpointMapping(createHcmOverlay(), {
       providerId: "home_assistant",
