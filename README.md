@@ -374,6 +374,7 @@ Context Snapshot
 后续重点：
 
 - `v0.10` Real Home Pilot：完成真实住宅七天稳定性和低风险设备验收。
+- `v0.25` Conversation Router：未来计划，暂缓实现；用于把时间、闲聊、外部知识和设备能力查询从 HCM 执行链入口分流出来。
 - `v1.0` Local-first Open Smart Home AI Framework。
 
 完整规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。

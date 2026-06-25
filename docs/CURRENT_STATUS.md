@@ -227,6 +227,26 @@ Key boundaries:
 
 ## Near-Term Plan
 
+### v0.25 - Conversation Router
+
+Status: deferred; intentionally not implemented yet.
+
+Goal: add a lightweight entry router before HCM so obvious non-device requests do not get forced through the smart-home execution chain.
+
+Intended scope:
+
+- Route deterministic local questions such as current time/date without calling the HCM planner.
+- Route generic chat or story requests to a chat response path instead of returning "no home device can execute this."
+- Route external knowledge questions, such as sports schedules or current events, to a future external knowledge provider or a clear "needs lookup" response.
+- Route device capability questions, such as "电视有哪些可控制功能", to HCM read-only capability lookup.
+- Keep complex home scenes, such as "准备睡觉" or "有点暗", on the existing LLM + HCM path.
+
+Constraints:
+
+- No extra LLM call should be added to the hot path.
+- Rules should only handle high-confidence routing; ambiguous home intents still go to the current LLM intent frame.
+- This is a future product layer, not part of the current v0.24 runtime.
+
 ### v0.10 - Real Home Pilot
 
 Goal: run a limited real-home pilot with low-risk devices only.
