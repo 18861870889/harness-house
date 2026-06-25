@@ -103,6 +103,7 @@ const SPATIAL_EDITOR_LEGACY_STORAGE_KEYS = [
 const APP_VIEWS = {
   CONTROL: "control",
   MAP_EDITOR: "map-editor",
+  HOME_MODEL: "home-model",
 };
 const COMMAND_EXECUTION_PREFERENCE = {
   DRY_RUN: "dry_run",
@@ -167,6 +168,7 @@ function writeSpatialEditorState(state) {
 
 function readAppView() {
   if (typeof window === "undefined") return APP_VIEWS.CONTROL;
+  if (window.location.hash === "#home-model") return APP_VIEWS.HOME_MODEL;
   return window.location.hash === "#map-editor" ? APP_VIEWS.MAP_EDITOR : APP_VIEWS.CONTROL;
 }
 
@@ -983,7 +985,8 @@ export default function App() {
   const handleViewChange = useCallback((view) => {
     setActiveView(view);
     if (typeof window !== "undefined") {
-      window.location.hash = view === APP_VIEWS.MAP_EDITOR ? "map-editor" : "";
+      window.location.hash =
+        view === APP_VIEWS.MAP_EDITOR ? "map-editor" : view === APP_VIEWS.HOME_MODEL ? "home-model" : "";
     }
   }, []);
 
@@ -1042,6 +1045,27 @@ export default function App() {
     );
   }
 
+  if (activeView === APP_VIEWS.HOME_MODEL) {
+    return (
+      <main className="app model-manager-app">
+        <HomeModelWorkspace
+          home={hcmHome}
+          onboarding={onboardingPlan}
+          status={hcmStatus}
+          onRefresh={refreshHcmHome}
+          onBack={() => handleViewChange(APP_VIEWS.CONTROL)}
+          onOpenMap={() => handleViewChange(APP_VIEWS.MAP_EDITOR)}
+          onApplyDefaultRun={applyDefaultRun}
+          onHideThing={hideHcmThing}
+          onRecordOnboardingBaseline={recordOnboardingBaseline}
+          reviewActionId={reviewActionId}
+          onboardingActionId={onboardingActionId}
+          defaultRunSummary={defaultRunSummary}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="app control-app">
       <Header
@@ -1079,6 +1103,7 @@ export default function App() {
           onRefresh={refreshHcmHome}
           onApplyDefaultRun={applyDefaultRun}
           onHideThing={hideHcmThing}
+          onOpenModel={() => handleViewChange(APP_VIEWS.HOME_MODEL)}
           onRecordOnboardingBaseline={recordOnboardingBaseline}
           reviewActionId={reviewActionId}
           onboardingActionId={onboardingActionId}
@@ -1202,6 +1227,15 @@ function Header({ currentRoomId, activeCount, llmStatus, runtimeStatus, sceneRoo
         >
           <Home size={13} />
           控制
+        </button>
+        <button
+          className={activeView === APP_VIEWS.HOME_MODEL ? "selected" : ""}
+          type="button"
+          onClick={() => onViewChange(APP_VIEWS.HOME_MODEL)}
+          title="家庭语义模型"
+        >
+          <Network size={13} />
+          模型
         </button>
         <button
           className={activeView === APP_VIEWS.MAP_EDITOR ? "selected" : ""}
@@ -1372,16 +1406,272 @@ function Metric({ label, value, tone = "normal" }) {
   );
 }
 
-function HcmCatalog({
+function HomeModelWorkspace({
   home,
   onboarding,
   status,
   onRefresh,
+  onBack,
+  onOpenMap,
   onApplyDefaultRun,
   onHideThing,
   onRecordOnboardingBaseline,
   reviewActionId,
   onboardingActionId,
+  defaultRunSummary,
+}) {
+  const [selectedThingId, setSelectedThingId] = useState(null);
+  const [draft, setDraft] = useState({ name: "", spaceId: "", aliases: "" });
+  const [savingThingId, setSavingThingId] = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const selectedThing = useMemo(
+    () => home?.things?.find((thing) => thing.id === selectedThingId) ?? home?.things?.[0] ?? null,
+    [home, selectedThingId],
+  );
+  const roomNameById = useMemo(
+    () => new Map((home?.spaces ?? []).map((space) => [space.id, space.name])),
+    [home],
+  );
+  const roomSummaries = useMemo(() => {
+    if (!home) return [];
+    const counts = new Map((home.spaces ?? []).map((space) => [space.id, { ...space, count: 0, auto: 0 }]));
+    for (const thing of home.things ?? []) {
+      const current = counts.get(thing.spaceId) ?? { id: thing.spaceId, name: thing.spaceId || "未分区", count: 0, auto: 0 };
+      current.count += 1;
+      current.auto += thing.state?.autoExecutable ?? 0;
+      counts.set(thing.spaceId, current);
+    }
+    return Array.from(counts.values())
+      .filter((room) => room.count > 0)
+      .sort((first, second) => second.count - first.count);
+  }, [home]);
+  const groupedThings = useMemo(() => {
+    if (!home) return [];
+    return [...home.things]
+      .sort((first, second) => {
+        const roomDelta = String(roomNameById.get(first.spaceId) ?? first.spaceId).localeCompare(
+          String(roomNameById.get(second.spaceId) ?? second.spaceId),
+          "zh-CN",
+        );
+        if (roomDelta !== 0) return roomDelta;
+        return first.name.localeCompare(second.name, "zh-CN");
+      });
+  }, [home, roomNameById]);
+  const defaultPolicy = defaultRunSummary ?? home?.defaultPolicy;
+
+  useEffect(() => {
+    if (!selectedThing) return;
+    setDraft({
+      name: selectedThing.name ?? "",
+      spaceId: selectedThing.spaceId ?? "",
+      aliases: (selectedThing.aliases ?? []).join("、"),
+    });
+    setSaveError(null);
+  }, [selectedThing?.id]);
+
+  async function saveThingOverlay() {
+    if (!selectedThing || savingThingId) return;
+    setSavingThingId(selectedThing.id);
+    setSaveError(null);
+    try {
+      await updateHcmThingOverride({
+        providerId: home?.provider?.id,
+        thingId: selectedThing.id,
+        patch: {
+          name: draft.name,
+          spaceId: draft.spaceId,
+          aliases: draft.aliases
+            .split(/[、,，\s]+/)
+            .map((item) => item.trim())
+            .filter(Boolean),
+        },
+      });
+      await onRefresh();
+    } catch (error) {
+      setSaveError(error.message);
+    } finally {
+      setSavingThingId(null);
+    }
+  }
+
+  return (
+    <section className="model-workspace-shell">
+      <header className="model-workspace-header">
+        <div>
+          <span>Home Model</span>
+          <h1>家庭语义模型管理</h1>
+          <p>管理房间、设备、别名、能力边界和接入建议；这里修改的是 Harness 本地语义层，不直接改 HA。</p>
+        </div>
+        <div className="model-workspace-actions">
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={14} />
+            同步
+          </button>
+          <button type="button" onClick={onOpenMap}>
+            <MapIcon size={14} />
+            户型
+          </button>
+          <button type="button" onClick={onBack}>
+            <Home size={14} />
+            控制台
+          </button>
+        </div>
+      </header>
+
+      {status.state === "loading" && <p className="hcm-note">正在同步真实设备能力...</p>}
+      {status.state === "error" && <p className="hcm-error">{status.error}</p>}
+
+      {home && (
+        <div className="model-workspace-grid">
+          <section className="model-section model-overview">
+            <div className="model-section-title">
+              <span>Overview</span>
+              <strong>{home.stats.thingCount} 设备</strong>
+            </div>
+            <div className="model-overview-grid">
+              <Metric label="房间" value={`${roomSummaries.length}`} />
+              <Metric label="逻辑设备" value={`${home.controlGraph?.stats?.assetCount ?? 0}`} />
+              <Metric label="可自动" value={`${home.stats.autoExecutableCapabilities}`} />
+              <Metric label="待处理" value={`${home.capabilitySummary?.reviewSurfaceCount ?? 0}`} tone="danger" />
+            </div>
+            {defaultPolicy?.enabled && (
+              <div className="default-run-summary">
+                默认开放 <strong>{defaultPolicy.allowed}</strong>
+                <span>保护 {defaultPolicy.protected}</span>
+              </div>
+            )}
+          </section>
+
+          <section className="model-section model-room-section">
+            <div className="model-section-title">
+              <span>Rooms</span>
+              <strong>{roomSummaries.length}</strong>
+            </div>
+            <div className="model-room-list">
+              {roomSummaries.map((room) => (
+                <button
+                  type="button"
+                  key={room.id}
+                  onClick={() => {
+                    const firstThing = groupedThings.find((thing) => thing.spaceId === room.id);
+                    if (firstThing) setSelectedThingId(firstThing.id);
+                  }}
+                >
+                  <span>{room.name}</span>
+                  <strong>{room.count}</strong>
+                  <small>可自动 {room.auto}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="model-section model-device-section">
+            <div className="model-section-title">
+              <span>Devices</span>
+              <strong>{groupedThings.length}</strong>
+            </div>
+            <div className="model-device-list">
+              {groupedThings.map((thing) => (
+                <button
+                  className={thing.id === selectedThing?.id ? "selected" : ""}
+                  type="button"
+                  key={thing.id}
+                  onClick={() => setSelectedThingId(thing.id)}
+                >
+                  <span>{roomNameById.get(thing.spaceId) ?? thing.spaceId ?? "未分区"}</span>
+                  <strong>{thing.name}</strong>
+                  <small>{thing.boundary?.label ?? thingStateBadge(thing)}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="model-section model-detail-section">
+            <div className="model-section-title">
+              <span>Device Detail</span>
+              <strong>{selectedThing?.type ?? "未选择"}</strong>
+            </div>
+            {selectedThing ? (
+              <div className="model-detail-form">
+                <label>
+                  <span>显示名称</span>
+                  <input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+                </label>
+                <label>
+                  <span>房间</span>
+                  <select value={draft.spaceId} onChange={(event) => setDraft((current) => ({ ...current, spaceId: event.target.value }))}>
+                    <option value="">未分区</option>
+                    {(home.spaces ?? []).map((space) => (
+                      <option value={space.id} key={space.id}>
+                        {space.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>别名</span>
+                  <input
+                    value={draft.aliases}
+                    onChange={(event) => setDraft((current) => ({ ...current, aliases: event.target.value }))}
+                    placeholder="用顿号或逗号分隔"
+                  />
+                </label>
+                <div className="model-detail-meta">
+                  <span>能力 {selectedThing.capabilities?.length ?? 0}</span>
+                  <span>可自动 {selectedThing.state?.autoExecutable ?? 0}</span>
+                  <span>只读 {selectedThing.state?.readable ?? 0}</span>
+                </div>
+                {saveError && <p className="hcm-error">{saveError}</p>}
+                <button className="model-save-button" type="button" disabled={Boolean(savingThingId)} onClick={saveThingOverlay}>
+                  <Check size={14} />
+                  保存本地语义
+                </button>
+              </div>
+            ) : (
+              <p className="hcm-note">暂无设备。</p>
+            )}
+          </section>
+
+          <section className="model-section model-boundary-section">
+            <CapabilityBoundarySummary summary={home.capabilitySummary} />
+            <ControlGraphSummary graph={home.controlGraph} />
+            <BindingReview
+              review={home.review}
+              reviewSurfaceCount={home.capabilitySummary?.reviewSurfaceCount}
+              hiddenThingIds={home.overlay?.reviewHiddenThingIds}
+              onHideThing={onHideThing}
+              actionId={reviewActionId}
+            />
+          </section>
+
+          <section className="model-section model-onboarding-section">
+            <div className="model-section-title">
+              <span>Onboarding</span>
+              <strong>{onboarding?.plan?.summary?.candidateCount ?? 0}</strong>
+            </div>
+            <button className="model-open-button" type="button" onClick={onApplyDefaultRun} disabled={Boolean(reviewActionId)}>
+              <Play size={14} />
+              应用默认安全策略
+            </button>
+            <OnboardingPanel
+              onboarding={onboarding}
+              actionId={onboardingActionId}
+              onRecordBaseline={onRecordOnboardingBaseline}
+            />
+          </section>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HcmCatalog({
+  home,
+  status,
+  onRefresh,
+  onApplyDefaultRun,
+  onOpenModel,
+  reviewActionId,
   defaultRunSummary,
 }) {
   const areaCounts = useMemo(() => {
@@ -1402,6 +1692,7 @@ function HcmCatalog({
       .slice(0, 6);
   }, [home]);
   const defaultPolicy = defaultRunSummary ?? home?.defaultPolicy;
+  const issueCount = home?.capabilitySummary?.reviewSurfaceCount ?? home?.review?.recommendations?.totalDevices ?? 0;
 
   return (
     <section className="panel hcm-panel">
@@ -1426,11 +1717,19 @@ function HcmCatalog({
       {status.state === "error" && <p className="hcm-error">{status.error}</p>}
       {home && (
         <>
-          <div className="hcm-metrics">
-            <Metric label="真实设备" value={`${home.stats.thingCount}`} />
-            <Metric label="能力" value={`${home.stats.capabilityCount}`} />
-            <Metric label="可自动执行" value={`${home.stats.autoExecutableCapabilities}`} />
-            <Metric label="受保护能力" value={`${home.stats.unresolvedBindingCount}`} tone="danger" />
+          <div className="home-model-brief">
+            <div>
+              <strong>{home.stats.thingCount}</strong>
+              <span>真实设备</span>
+            </div>
+            <div>
+              <strong>{home.controlGraph?.stats?.assetCount ?? 0}</strong>
+              <span>逻辑设备</span>
+            </div>
+            <div className={issueCount > 0 ? "attention" : ""}>
+              <strong>{issueCount}</strong>
+              <span>待处理</span>
+            </div>
           </div>
           <div className="hcm-area-strip">
             {areaCounts.slice(0, 6).map(([area, count]) => (
@@ -1452,20 +1751,10 @@ function HcmCatalog({
               <span>保护 {defaultPolicy.protected}</span>
             </div>
           )}
-          <ControlGraphSummary graph={home.controlGraph} />
-          <CapabilityBoundarySummary summary={home.capabilitySummary} />
-          <BindingReview
-            review={home.review}
-            reviewSurfaceCount={home.capabilitySummary?.reviewSurfaceCount}
-            hiddenThingIds={home.overlay?.reviewHiddenThingIds}
-            onHideThing={onHideThing}
-            actionId={reviewActionId}
-          />
-          <OnboardingPanel
-            onboarding={onboarding}
-            actionId={onboardingActionId}
-            onRecordBaseline={onRecordOnboardingBaseline}
-          />
+          <button className="model-open-button" type="button" onClick={onOpenModel}>
+            <Network size={14} />
+            管理家庭模型
+          </button>
           <div className="hcm-thing-list">
             {visibleThings.map((thing) => (
               <div className={`hcm-thing risk-${thing.policy.risk}`} key={thing.id}>
@@ -2452,13 +2741,22 @@ function CommandConsole({
   const realSelected = executionControl?.preference === COMMAND_EXECUTION_PREFERENCE.REAL;
   const realAvailable = Boolean(executionControl?.realAvailable);
   const effectiveReal = executionControl?.effectiveMode === COMMAND_EXECUTION_PREFERENCE.REAL;
-  const executionHint = effectiveReal
-    ? "真实控制低风险设备"
-    : realSelected && !realAvailable
-      ? "后端未开启 Real，仍会模拟"
-      : realAvailable
-        ? "后端已允许 Real，本次仍模拟"
-        : "只规划、模拟和审计";
+  const messageListRef = useRef(null);
+  let executionHint = "只规划、模拟和审计";
+  if (effectiveReal) {
+    executionHint = "真实控制低风险设备";
+  } else if (realSelected && !realAvailable) {
+    executionHint = "后端未开启 Real，仍会模拟";
+  } else if (realAvailable) {
+    executionHint = "后端已允许 Real，本次仍模拟";
+  }
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  }, [messages, processing]);
+
   return (
     <section className="panel console-panel">
       <div className="panel-title">
@@ -2511,7 +2809,7 @@ function CommandConsole({
           </button>
         </div>
       </div>
-      <div className="message-list" aria-live="polite">
+      <div className="message-list" aria-live="polite" ref={messageListRef}>
         {messages.slice(-8).map((message) => (
           <div className={`message ${message.role}`} key={message.id}>
             <div className="message-bubble">
@@ -2629,78 +2927,36 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
   const mapping = agents?.agents?.mapping;
   const diagnostics = agents?.agents?.diagnostics;
   const testAgent = agents?.agents?.test;
+  const insightItems = [
+    {
+      label: "人在区域",
+      value: context?.likelySpace?.name ?? "未知",
+      meta: context?.likelySpace ? `${Math.round((context.likelySpace.confidence ?? 0) * 100)}%` : "暂无占用信号",
+    },
+    { label: "学习候选", value: `${learning?.candidates?.length ?? 0}`, meta: "仅建议" },
+    { label: "映射建议", value: `${mapping?.candidates?.length ?? 0}`, meta: "待确认" },
+    { label: "诊断发现", value: `${diagnostics?.findings?.length ?? 0}`, meta: "健康提示" },
+  ];
   return (
     <section className="panel intelligence-panel">
       <div className="panel-title">
         <Bot size={17} />
-        <h2>Agents</h2>
+        <h2>System Insights</h2>
         <button className="mini-icon-button" type="button" onClick={onRefresh} title="刷新审计和学习摘要">
           <RefreshCw size={13} />
         </button>
       </div>
       <div className="agent-mode">
-        <span>Shadow mode</span>
-        <strong>{agents?.summary?.agentCount ?? 0} agents</strong>
+        <span>后台分析</span>
+        <strong>{agents?.summary?.actionRequired ? "需要关注" : "运行正常"}</strong>
       </div>
       {agents && (
-        <div className="agent-grid">
-          <div className="agent-card">
-            <span>Context</span>
-            <strong>{context?.likelySpace?.name ?? "未知"}</strong>
-            <small>
-              {context?.likelySpace ? `${Math.round((context.likelySpace.confidence ?? 0) * 100)}% 置信度` : "无占用信号"}
-            </small>
-          </div>
-          <div className="agent-card">
-            <span>Learning</span>
-            <strong>{learning?.candidates?.length ?? 0}</strong>
-            <small>shadow 候选</small>
-          </div>
-          <div className="agent-card">
-            <span>Mapping</span>
-            <strong>{mapping?.candidates?.length ?? 0}</strong>
-            <small>接入/边界建议</small>
-          </div>
-          <div className="agent-card">
-            <span>Diagnostics</span>
-            <strong>{diagnostics?.findings?.length ?? 0}</strong>
-            <small>运行发现</small>
-          </div>
-          <div className="agent-card">
-            <span>Test</span>
-            <strong>{testAgent?.testCases?.length ?? 0}</strong>
-            <small>dry-run 用例</small>
-          </div>
-        </div>
-      )}
-      {mapping?.candidates?.length > 0 && (
-        <div className="agent-list">
-          {mapping.candidates.slice(0, 2).map((candidate) => (
-            <div className={`agent-item severity-${candidate.severity}`} key={candidate.thingId || candidate.thingName}>
-              <span>{candidate.proposedAction}</span>
-              <strong>{candidate.thingName}</strong>
-              <small>{candidate.reason}</small>
-            </div>
-          ))}
-        </div>
-      )}
-      {diagnostics?.findings?.length > 0 && (
-        <div className="agent-list">
-          {diagnostics.findings.slice(0, 2).map((finding) => (
-            <div className={`agent-item severity-${finding.severity}`} key={finding.id}>
-              <span>{finding.title}</span>
-              <strong>{finding.message}</strong>
-            </div>
-          ))}
-        </div>
-      )}
-      {testAgent?.testCases?.length > 0 && (
-        <div className="agent-list">
-          {testAgent.testCases.slice(0, 2).map((testCase) => (
-            <div className="agent-item severity-low" key={testCase.id}>
-              <span>{testCase.priority}</span>
-              <strong>{testCase.input}</strong>
-              <small>{testCase.type}</small>
+        <div className="insight-grid">
+          {insightItems.map((item) => (
+            <div className="insight-card" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <small>{item.meta}</small>
             </div>
           ))}
         </div>
@@ -2710,86 +2966,122 @@ function IntelligencePanel({ audit, memory, agents, actionId, onRefresh, onRepla
         <Metric label="候选" value={`${memory?.candidateCount ?? 0}`} />
         <Metric label="忽略" value={`${memory?.ignoredCount ?? 0}`} />
       </div>
-      <div className="learning-list">
-        {candidates.length === 0 ? (
-          <div className="learning-empty">Shadow mode</div>
-        ) : (
-          candidates.slice(0, 3).map((candidate) => (
-            <div className="learning-candidate" key={candidate.id}>
-              <div>
-                <span>{candidate.type}</span>
-                <strong>{candidate.input}</strong>
-                <small>
-                  {candidate.count}x · {Math.round(candidate.confidence * 100)}%
-                </small>
+      <details className="insight-details">
+        <summary>查看后台详情</summary>
+        {mapping?.candidates?.length > 0 && (
+          <div className="agent-list">
+            {mapping.candidates.slice(0, 2).map((candidate) => (
+              <div className={`agent-item severity-${candidate.severity}`} key={candidate.thingId || candidate.thingName}>
+                <span>{candidate.proposedAction}</span>
+                <strong>{candidate.thingName}</strong>
+                <small>{candidate.reason}</small>
               </div>
-              <div className="candidate-actions">
-                <button
-                  type="button"
-                  disabled={Boolean(actionId)}
-                  onClick={() => onIgnoreCandidate(candidate)}
-                  title="忽略这个学习候选"
-                >
-                  忽略
-                </button>
-                <button
-                  type="button"
-                  disabled={Boolean(actionId)}
-                  onClick={() => onDeleteCandidate(candidate)}
-                  title="删除并阻止它从历史观察中立刻重建"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-      {corrections.length > 0 && (
-        <div className="correction-list">
-          <div className="correction-header">
-            <span>需要纠错</span>
-            <strong>{corrections.length}</strong>
+            ))}
           </div>
-          {corrections.slice(0, 3).map((candidate) => (
-            <div className="correction-candidate" key={candidate.id}>
-              <span>{candidate.input}</span>
-              <small>{candidate.reason}</small>
+        )}
+        {diagnostics?.findings?.length > 0 && (
+          <div className="agent-list">
+            {diagnostics.findings.slice(0, 2).map((finding) => (
+              <div className={`agent-item severity-${finding.severity}`} key={finding.id}>
+                <span>{finding.title}</span>
+                <strong>{finding.message}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        {testAgent?.testCases?.length > 0 && (
+          <div className="agent-list">
+            {testAgent.testCases.slice(0, 2).map((testCase) => (
+              <div className="agent-item severity-low" key={testCase.id}>
+                <span>{testCase.priority}</span>
+                <strong>{testCase.input}</strong>
+                <small>{testCase.type}</small>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="learning-list">
+          {candidates.length === 0 ? (
+            <div className="learning-empty">暂无可处理学习候选</div>
+          ) : (
+            candidates.slice(0, 3).map((candidate) => (
+              <div className="learning-candidate" key={candidate.id}>
+                <div>
+                  <span>{candidate.type}</span>
+                  <strong>{candidate.input}</strong>
+                  <small>
+                    {candidate.count}x · {Math.round(candidate.confidence * 100)}%
+                  </small>
+                </div>
+                <div className="candidate-actions">
+                  <button
+                    type="button"
+                    disabled={Boolean(actionId)}
+                    onClick={() => onIgnoreCandidate(candidate)}
+                    title="忽略这个学习候选"
+                  >
+                    忽略
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(actionId)}
+                    onClick={() => onDeleteCandidate(candidate)}
+                    title="删除并阻止它从历史观察中立刻重建"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {corrections.length > 0 && (
+          <div className="correction-list">
+            <div className="correction-header">
+              <span>需要纠错</span>
+              <strong>{corrections.length}</strong>
+            </div>
+            {corrections.slice(0, 3).map((candidate) => (
+              <div className="correction-candidate" key={candidate.id}>
+                <span>{candidate.input}</span>
+                <small>{candidate.reason}</small>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="audit-mini-list">
+          {audit.slice(0, 3).map((entry) => (
+            <div className={`audit-mini-item ${entry.status}`} key={entry.commandId}>
+              <div>
+                <span>{entry.status}</span>
+                <strong>{entry.input}</strong>
+                <small>{entry.latencyMs}ms</small>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(actionId)}
+                onClick={() => onReplay(entry)}
+                title="以 dry-run 模式回放该命令"
+              >
+                <Play size={11} />
+                回放
+              </button>
             </div>
           ))}
         </div>
-      )}
-      <div className="audit-mini-list">
-        {audit.slice(0, 3).map((entry) => (
-          <div className={`audit-mini-item ${entry.status}`} key={entry.commandId}>
-            <div>
-              <span>{entry.status}</span>
-              <strong>{entry.input}</strong>
-              <small>{entry.latencyMs}ms</small>
-            </div>
-            <button
-              type="button"
-              disabled={Boolean(actionId)}
-              onClick={() => onReplay(entry)}
-              title="以 dry-run 模式回放该命令"
-            >
-              <Play size={11} />
-              回放
-            </button>
-          </div>
-        ))}
-      </div>
+      </details>
     </section>
   );
 }
 
 function AutomationSuggestionsPanel({ data, actionId, onCapture, onSimulate, onReview }) {
   const suggestions = (data?.suggestions ?? []).filter((item) => item.status !== "ignored").slice(0, 4);
+  const activeCount = suggestions.filter((suggestion) => suggestion.status !== "reviewed").length;
   return (
     <section className="panel automation-panel">
       <div className="panel-title">
         <Activity size={17} />
-        <h2>Automation</h2>
+        <h2>Automation Lab</h2>
         <span className="shadow-badge">Shadow</span>
         <button
           className="mini-icon-button"
@@ -2801,54 +3093,61 @@ function AutomationSuggestionsPanel({ data, actionId, onCapture, onSimulate, onR
           <RefreshCw size={13} />
         </button>
       </div>
+      <div className="automation-intro">
+        <strong>{activeCount > 0 ? `${activeCount} 条建议待看` : "暂无需要处理的自动化"}</strong>
+        <span>这里只做影子观察和模拟，不会自动启用真实设备联动。</span>
+      </div>
       <div className="automation-summary">
-        <span>events <strong>{data?.eventCount ?? 0}</strong></span>
-        <span>suggestions <strong>{data?.suggestionCount ?? 0}</strong></span>
-        <span>reviewed <strong>{data?.reviewedCount ?? 0}</strong></span>
+        <span>事件 <strong>{data?.eventCount ?? 0}</strong></span>
+        <span>建议 <strong>{data?.suggestionCount ?? 0}</strong></span>
+        <span>已看 <strong>{data?.reviewedCount ?? 0}</strong></span>
       </div>
       {suggestions.length === 0 ? (
         <p className="hcm-note">需要至少两次相似成功操作才会生成建议。</p>
       ) : (
-        <div className="automation-list">
-          {suggestions.map((suggestion) => (
-            <div className="automation-item" key={suggestion.id}>
-              <div>
-                <strong>{suggestion.title}</strong>
-                <p>{suggestion.summary}</p>
-                <small>{Math.round(suggestion.confidence * 100)}% · {suggestion.status}</small>
+        <details className="automation-details">
+          <summary>查看建议与模拟</summary>
+          <div className="automation-list">
+            {suggestions.map((suggestion) => (
+              <div className="automation-item" key={suggestion.id}>
+                <div>
+                  <strong>{suggestion.title}</strong>
+                  <p>{suggestion.summary}</p>
+                  <small>{Math.round(suggestion.confidence * 100)}% · {suggestion.status}</small>
+                </div>
+                <div className="automation-actions">
+                  <button
+                    className="mini-icon-button"
+                    type="button"
+                    onClick={() => onSimulate(suggestion)}
+                    disabled={Boolean(actionId)}
+                    title="仅模拟，不控制真实设备"
+                  >
+                    <Play size={13} />
+                  </button>
+                  <button
+                    className="mini-icon-button"
+                    type="button"
+                    onClick={() => onReview(suggestion, "reviewed")}
+                    disabled={Boolean(actionId) || suggestion.status === "reviewed"}
+                    title="标记为已审核，不启用自动化"
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    className="mini-icon-button"
+                    type="button"
+                    onClick={() => onReview(suggestion, "ignored")}
+                    disabled={Boolean(actionId)}
+                    title="忽略建议"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               </div>
-              <div className="automation-actions">
-                <button
-                  className="mini-icon-button"
-                  type="button"
-                  onClick={() => onSimulate(suggestion)}
-                  disabled={Boolean(actionId)}
-                  title="仅模拟，不控制真实设备"
-                >
-                  <Play size={13} />
-                </button>
-                <button
-                  className="mini-icon-button"
-                  type="button"
-                  onClick={() => onReview(suggestion, "reviewed")}
-                  disabled={Boolean(actionId) || suggestion.status === "reviewed"}
-                  title="标记为已审核，不启用自动化"
-                >
-                  <Check size={13} />
-                </button>
-                <button
-                  className="mini-icon-button"
-                  type="button"
-                  onClick={() => onReview(suggestion, "ignored")}
-                  disabled={Boolean(actionId)}
-                  title="忽略建议"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </details>
       )}
     </section>
   );

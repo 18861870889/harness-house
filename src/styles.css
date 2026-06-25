@@ -197,9 +197,9 @@ button {
 .view-switch {
   grid-column: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
-  width: 190px;
+  width: 252px;
 }
 
 .view-switch button,
@@ -221,6 +221,7 @@ button {
 }
 
 .view-switch button.selected,
+.view-switch button:hover,
 .map-workspace-actions button:hover {
   color: #287a5a;
   border-color: rgba(37, 141, 102, 0.38);
@@ -445,6 +446,68 @@ button {
 
 .agent-mode strong {
   color: var(--cyan);
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.insight-card {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.16);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.insight-card span,
+.insight-card small,
+.insight-card strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insight-card span,
+.insight-card small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.insight-card strong {
+  margin: 3px 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.insight-details,
+.automation-details {
+  margin-top: 8px;
+}
+
+.insight-details summary,
+.automation-details summary {
+  padding: 7px 8px;
+  border: 1px solid rgba(69, 111, 104, 0.16);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+
+.insight-details[open] summary,
+.automation-details[open] summary {
+  margin-bottom: 8px;
+  color: var(--cyan);
+  border-color: rgba(22, 143, 131, 0.28);
 }
 
 .runtime-panel {
@@ -1120,6 +1183,27 @@ button {
   text-transform: uppercase;
 }
 
+.automation-intro {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgba(59, 126, 156, 0.16);
+  border-radius: var(--radius);
+  background: rgba(243, 248, 251, 0.7);
+}
+
+.automation-intro strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.automation-intro span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .automation-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1313,6 +1397,260 @@ button {
   overflow-wrap: anywhere;
 }
 
+.model-manager-app {
+  min-height: 100vh;
+  overflow: auto;
+  padding: 18px;
+}
+
+.model-workspace-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  width: min(1480px, 100%);
+  margin: 0 auto;
+}
+
+.model-workspace-header {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.model-workspace-header span {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-workspace-header h1 {
+  margin: 4px 0;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.model-workspace-header p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.model-workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.model-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(260px, 1fr) minmax(340px, 1.2fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.model-section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.model-overview,
+.model-room-section {
+  grid-column: 1;
+}
+
+.model-device-section {
+  grid-column: 2;
+  grid-row: span 2;
+}
+
+.model-detail-section {
+  grid-column: 3;
+}
+
+.model-boundary-section {
+  grid-column: 1 / span 2;
+}
+
+.model-onboarding-section {
+  grid-column: 3;
+}
+
+.model-section-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-section-title strong {
+  color: var(--cyan);
+  text-transform: none;
+}
+
+.model-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-room-list,
+.model-device-list {
+  display: grid;
+  gap: 7px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.model-room-list button,
+.model-device-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(69, 111, 104, 0.16);
+  border-radius: var(--radius);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+}
+
+.model-room-list button:hover,
+.model-device-list button:hover,
+.model-device-list button.selected {
+  border-color: rgba(22, 143, 131, 0.46);
+  background: rgba(229, 244, 240, 0.78);
+}
+
+.model-room-list span,
+.model-device-list span,
+.model-room-list strong,
+.model-device-list strong,
+.model-room-list small,
+.model-device-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-room-list span,
+.model-device-list strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.model-room-list strong {
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.model-room-list small,
+.model-device-list small,
+.model-device-list span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.model-room-list small,
+.model-device-list small {
+  grid-column: 1 / -1;
+}
+
+.model-detail-form {
+  display: grid;
+  gap: 10px;
+}
+
+.model-detail-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.model-detail-form input,
+.model-detail-form select {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(69, 111, 104, 0.2);
+  border-radius: var(--radius);
+  outline: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.model-detail-form input:focus,
+.model-detail-form select:focus {
+  border-color: rgba(22, 143, 131, 0.54);
+  box-shadow: 0 0 0 3px rgba(22, 143, 131, 0.09);
+}
+
+.model-detail-meta {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.model-detail-meta span {
+  padding: 5px 7px;
+  border: 1px solid rgba(69, 111, 104, 0.14);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  background: rgba(224, 238, 233, 0.22);
+}
+
+.model-save-button,
+.model-open-button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid rgba(37, 141, 102, 0.28);
+  border-radius: var(--radius);
+  color: #287a5a;
+  font-size: 12px;
+  font-weight: 900;
+  background: #e5f4f0;
+  cursor: pointer;
+}
+
+.model-save-button:disabled,
+.model-open-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .hcm-panel,
 .intelligence-panel,
 .automation-panel,
@@ -1331,6 +1669,46 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.home-model-brief {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.home-model-brief div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(69, 111, 104, 0.15);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.home-model-brief strong,
+.home-model-brief span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-model-brief strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.home-model-brief span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.home-model-brief .attention strong {
+  color: var(--amber);
 }
 
 .hcm-area-strip {
@@ -1397,6 +1775,11 @@ button {
 
 .default-run-summary span {
   color: var(--amber);
+}
+
+.model-open-button {
+  width: 100%;
+  margin-top: 9px;
 }
 
 .control-graph-summary {
@@ -2952,6 +3335,25 @@ button {
   .spatial-editor.workspace .spatial-map.has-floor-plan.ratio-locked {
     min-height: auto;
   }
+
+  .model-workspace-grid {
+    grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+  }
+
+  .model-overview,
+  .model-room-section,
+  .model-device-section,
+  .model-detail-section,
+  .model-boundary-section,
+  .model-onboarding-section {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .model-boundary-section,
+  .model-onboarding-section {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 900px) {
@@ -3019,6 +3421,32 @@ button {
 
   .map-editor-app {
     padding: 10px;
+  }
+
+  .model-manager-app {
+    padding: 10px;
+  }
+
+  .model-workspace-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .model-workspace-actions {
+    width: 100%;
+  }
+
+  .model-workspace-actions button {
+    flex: 1 1 0;
+  }
+
+  .model-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-boundary-section,
+  .model-onboarding-section {
+    grid-column: auto;
   }
 
   .map-workspace-header {
