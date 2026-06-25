@@ -27,6 +27,7 @@ import { buildHcmExecutionPlan } from "./src/hcmExecutor.js";
 import { executeSimulatedProviderPlan, simulateProviderExecutionPlan, verifyProviderExecutionResults } from "./src/providerExecutionRuntime.js";
 import { evaluateExecutionPolicy } from "./src/policyEngine.js";
 import {
+  buildNoPlannerDevicesDraft,
   buildHcmPlannerSystemPrompt,
   compileHcmForPlanner,
   normalizeHcmPlannerDraft,
@@ -880,36 +881,44 @@ async function runHcmCommandPipeline(payload) {
         }),
       { summarize: summarizePromptContextPack },
     );
-    if (plannerDevices.length === 0) {
-      const error = new Error("No auto-executable HCM capabilities are available.");
-      error.statusCode = 409;
-      throw error;
-    }
-
-    const draft = await runCommandStage(
-      trace,
-      "llm_planner",
-      () =>
-        callHcmPlannerModel({
-          input: payload.input,
-          currentRoomId: payload.currentRoomId,
-          selectedRoomId: payload.selectedRoomId,
-          devices: plannerDevices,
-          personalSemantics,
-          learningContext,
-          contextPack: promptContextPack,
-          context: contextAgent,
-          conversation,
-        }),
-      {
-        summarize: (draft) => ({
-          intent: draft.intent,
-          intentType: draft.intent_type ?? draft.intent_frame?.intent_type,
-          frame: Boolean(draft.intent_frame),
-          actionCount: draft.actions?.length ?? draft.intent_frame?.decision?.actions?.length ?? 0,
-        }),
-      },
-    );
+    const draft = plannerDevices.length === 0
+      ? await runCommandStage(
+          trace,
+          "planner_fallback",
+          () => buildNoPlannerDevicesDraft(payload.input, home),
+          {
+            summarize: (draft) => ({
+              intent: draft.intent,
+              intentType: draft.intent_type ?? draft.intent_frame?.intent_type,
+              frame: Boolean(draft.intent_frame),
+              actionCount: draft.actions?.length ?? 0,
+            }),
+          },
+        )
+      : await runCommandStage(
+          trace,
+          "llm_planner",
+          () =>
+            callHcmPlannerModel({
+              input: payload.input,
+              currentRoomId: payload.currentRoomId,
+              selectedRoomId: payload.selectedRoomId,
+              devices: plannerDevices,
+              personalSemantics,
+              learningContext,
+              contextPack: promptContextPack,
+              context: contextAgent,
+              conversation,
+            }),
+          {
+            summarize: (draft) => ({
+              intent: draft.intent,
+              intentType: draft.intent_type ?? draft.intent_frame?.intent_type,
+              frame: Boolean(draft.intent_frame),
+              actionCount: draft.actions?.length ?? draft.intent_frame?.decision?.actions?.length ?? 0,
+            }),
+          },
+        );
     const normalizedPlan = await runCommandStage(trace, "plan_normalize", async () => normalizeHcmPlannerDraft(payload.input, draft, home), {
       summarize: (plan) => ({
         intent: plan.intent,

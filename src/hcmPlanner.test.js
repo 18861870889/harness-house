@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHcmHome } from "./hcm.js";
 import { attachHcmControlGraph } from "./hcmControlGraph.js";
-import { compileHcmForPlanner, normalizeHcmPlannerDraft } from "./hcmPlanner.js";
+import { buildNoPlannerDevicesDraft, compileHcmForPlanner, normalizeHcmPlannerDraft } from "./hcmPlanner.js";
 
 function createPlannerHome() {
   return createHcmHome({
@@ -104,6 +104,33 @@ function createStudyPlannerHome({ spot = false, ceiling = false } = {}) {
   }));
 }
 
+function createBedroomAmbiguityHome() {
+  return attachHcmControlGraph(createHcmHome({
+    provider: { id: "home_assistant", name: "Home Assistant" },
+    spaces: [
+      { id: "卧室", name: "卧室" },
+      { id: "master", name: "主卧" },
+      { id: "second", name: "次卧" },
+    ],
+    things: [
+      {
+        id: "master_panel",
+        name: "主卧开关",
+        type: "switch_panel",
+        spaceId: "master",
+        capabilities: [control("master_light", "主卧主灯 开关左键", "switch.master_light", true)],
+      },
+      {
+        id: "second_panel",
+        name: "次卧开关",
+        type: "switch_panel",
+        spaceId: "second",
+        capabilities: [control("second_light", "次卧吸顶灯 开关左键", "switch.second_light", true)],
+      },
+    ],
+  }));
+}
+
 describe("hcm planner compiler", () => {
   it("exposes only auto executable HCM capabilities to the planner", () => {
     const devices = compileHcmForPlanner(createPlannerHome());
@@ -185,6 +212,21 @@ describe("hcm planner compiler", () => {
 
     expect(devices.map((device) => device.name)).toEqual(["书房射灯", "书房吊灯"]);
     expect(devices.map((device) => device.name)).not.toContain("客厅吊灯");
+  });
+
+  it("asks for clarification when a generic bedroom area has no executable lights", () => {
+    const home = createBedroomAmbiguityHome();
+    const devices = compileHcmForPlanner(home, { input: "卧室灯关一下" });
+    expect(devices).toEqual([]);
+
+    const draft = buildNoPlannerDevicesDraft("卧室灯关一下", home);
+    const plan = normalizeHcmPlannerDraft("卧室灯关一下", draft, home);
+
+    expect(plan.kind).toBe("unresolved_control");
+    expect(plan.requiresClarification).toBe(true);
+    expect(plan.actions).toEqual([]);
+    expect(plan.summary).toContain("主卧");
+    expect(plan.summary).toContain("次卧");
   });
 
   it("resolves a logical light back to its physical switch channel", () => {

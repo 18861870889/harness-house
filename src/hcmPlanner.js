@@ -13,7 +13,9 @@ import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./
 import { normalizeIntentFrame } from "./intentFrame.js";
 import { normalizeSemanticPlannerActions, resolveSemanticGrounding } from "./semanticGroundingResolver.js";
 
-const CONTROL_REQUEST_PATTERN = /打开|开启|启动|关闭|关掉|停止|暂停|调到|设置|播放|清扫|没关|忘了关|还开着/;
+const CONTROL_REQUEST_PATTERN = /打开|开启|启动|关闭|关一下|关掉|停止|暂停|调到|设置|播放|清扫|没关|忘了关|还开着/;
+const BEDROOM_GENERIC_PATTERN = /卧室|睡房|房间/;
+const BEDROOM_OPTION_PATTERN = /卧室|睡房|主卧|次卧|小孩房|儿童房/;
 
 export function compileHcmForPlanner(
   home,
@@ -65,6 +67,48 @@ export function compileHcmForPlanner(
     .slice(0, limit);
 }
 
+export function buildNoPlannerDevicesDraft(input = "", home) {
+  const text = normalizeText(input);
+  const bedroomOptions = BEDROOM_GENERIC_PATTERN.test(text) ? bedroomClarificationOptions(home) : [];
+  const summary = bedroomOptions.length > 1
+    ? `你是指${bedroomOptions.map((room) => room.name).join("还是")}？我先不操作灯。`
+    : "这个房间暂时没有可自动执行的设备，或者目标还不够明确。我先不操作设备。";
+  return {
+    intent_type: CONTROL_REQUEST_PATTERN.test(text) ? "device_control" : "unknown",
+    intent: input,
+    confidence: 0.25,
+    summary,
+    needs_confirmation: false,
+    actions: [],
+    intent_frame: {
+      intent_type: CONTROL_REQUEST_PATTERN.test(text) ? "device_control" : "unknown",
+      intent: input,
+      confidence: 0.25,
+      goal: {
+        domain: text.includes("灯") ? "lighting" : "general",
+        desired_outcome: summary,
+        space_refs: bedroomOptions.map((room) => room.name),
+        target_refs: [],
+        constraints: [],
+      },
+      grounding: {
+        required_facts: ["clarify_room"],
+        candidate_targets: [],
+      },
+      ambiguity: {
+        level: "high",
+        needs_clarification: true,
+        ambiguous_terms: bedroomOptions.length > 1 ? ["卧室"] : ["房间或设备"],
+        alternatives: bedroomOptions.map((room) => room.name),
+      },
+      decision: {
+        mode: "ask_clarification",
+        reason: summary,
+      },
+    },
+  };
+}
+
 function applyContextualTargetSelection(input, candidates) {
   if (!isContextualTargetSelectionInput(input)) return candidates;
   const text = normalizeText(input).replace(/^(第)?/, "").replace(/(吧|呢)$/, "");
@@ -79,6 +123,37 @@ function targetSelectionMatchesThing(text, name) {
   if (text === "吊灯" || text === "主灯") return /吊灯|主灯|吸顶灯/.test(normalizedName);
   if (text === "灯带") return /灯带|氛围灯/.test(normalizedName);
   return false;
+}
+
+function bedroomClarificationOptions(home) {
+  const bedroomRooms = (home?.spaces ?? [])
+    .filter((space) => isBedroomLikeSpace(space) && hasRoomPlannerDevices(home, space.id))
+    .map((space) => ({ id: space.id, name: space.name ?? space.id }));
+  const seen = new Set();
+  return bedroomRooms.filter((room) => {
+    if (!room.id || seen.has(room.id)) return false;
+    seen.add(room.id);
+    return true;
+  });
+}
+
+function isBedroomLikeSpace(space) {
+  const labels = [space?.id, space?.name, ...(space?.aliases ?? [])].map(normalizeText).filter(Boolean);
+  if (labels.some((label) => /卫生间|洗手间|主卫|公卫|bath/.test(label))) return false;
+  return labels.some((label) => BEDROOM_OPTION_PATTERN.test(label));
+}
+
+function hasRoomPlannerDevices(home, roomId) {
+  const graph = getHcmControlGraph(home);
+  if (
+    graph.assets.some((asset) => {
+      const resolved = resolveControlAsset(home, asset.id);
+      return asset.spaceId === roomId && asset.type === "light" && isPlannerExecutableCapability(resolved?.capability);
+    })
+  ) {
+    return true;
+  }
+  return (home?.things ?? []).some((thing) => thing.spaceId === roomId && compileThing(thing).capabilities.length > 0);
 }
 
 export function normalizeHcmPlannerDraft(input, draft, home) {
