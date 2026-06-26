@@ -6,7 +6,7 @@ import {
   answerHcmThingStateQuery,
   looksLikeStateQuery,
 } from "./hcmStateQuery.js";
-import { answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
+import { answerHcmCapabilityQuery, answerHcmInventoryQuery, looksLikeInventoryQuery } from "./hcmKnowledgeQuery.js";
 import { isContextualTargetSelectionInput, isReferentialControlInput, isRoomScopedFollowUpInput } from "./conversationContext.js";
 import { INTENT_TYPES, createIntentResolution, normalizeIntentType } from "./intentResolution.js";
 import { findExplicitRoomIds, getHcmControlGraph, resolveControlAsset } from "./hcmControlGraph.js";
@@ -210,35 +210,36 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
   const groupResolution = expandNumberedAssetGroup(input, normalizedActions, home);
   const resolvedActions = groupResolution.blocked ? [] : groupResolution.actions;
   if (groupResolution.blocked) rejected.push(...groupResolution.unresolved.map((item) => `${item.name} 没有已确认的可执行控制通道`));
-  const inventoryQuery = resolvedActions.length === 0 && !controlRequested && looksLikeInventoryQuery(input)
+  const capabilityQuery = resolvedActions.length === 0 && !controlRequested
+    ? answerHcmCapabilityQuery(input, home, normalizedDraft?.query?.reason)
+    : null;
+  const inventoryQuery = resolvedActions.length === 0 && !controlRequested && !capabilityQuery && looksLikeInventoryQuery(input)
     ? answerHcmInventoryQuery(input, home, normalizedDraft?.query?.reason)
     : null;
   const roomLightStateQuery =
-    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && requestedIntentType === "state_query"
+    resolvedActions.length === 0 && !controlRequested && !capabilityQuery && !inventoryQuery && requestedIntentType === "state_query"
       ? answerHcmRoomLightStateQuery(input, home, normalizedDraft?.query?.reason)
       : null;
   const selectedStateQuery =
-    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input) && hasStateQueryTarget(normalizedDraft)
+    resolvedActions.length === 0 && !controlRequested && !capabilityQuery && !inventoryQuery && !roomLightStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input) && hasStateQueryTarget(normalizedDraft)
       ? resolvePlannerStateQuery(input, normalizedDraft, home, rejected)
       : null;
   const occupancyStateQuery =
-    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && requestedIntentType === "state_query"
+    resolvedActions.length === 0 && !controlRequested && !capabilityQuery && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && requestedIntentType === "state_query"
       ? answerHcmOccupancyStateQuery(input, home, normalizedDraft?.query?.reason)
       : null;
   const localStateQuery =
-    resolvedActions.length === 0 && !controlRequested && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && !occupancyStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
+    resolvedActions.length === 0 && !controlRequested && !capabilityQuery && !inventoryQuery && !roomLightStateQuery && !selectedStateQuery && !occupancyStateQuery && requestedIntentType === "state_query" && looksLikeStateQuery(input)
       ? answerHcmStateQuery(input, home, normalizedDraft?.query?.reason)
       : null;
-  const stateQuery = roomLightStateQuery
-    ? roomLightStateQuery
-    : selectedStateQuery
-      ? selectedStateQuery
-    : occupancyStateQuery
-      ? occupancyStateQuery
-    : localStateQuery
-      ? localStateQuery
-    : inventoryQuery;
-  const intentType = inventoryQuery
+  const stateQuery =
+    capabilityQuery ??
+    roomLightStateQuery ??
+    selectedStateQuery ??
+    occupancyStateQuery ??
+    localStateQuery ??
+    inventoryQuery;
+  const intentType = capabilityQuery || inventoryQuery
     ? "inventory_query"
     : controlRequested
       ? requestedIntentType === "scene" || resolvedActions.length > 1 ? "scene" : "device_control"
@@ -259,6 +260,8 @@ export function normalizeHcmPlannerDraft(input, draft, home) {
     id: crypto.randomUUID(),
     kind: inventoryQuery
       ? "hcm_inventory_query"
+      : capabilityQuery
+        ? "hcm_capability_query"
       : stateQuery
         ? "hcm_state_query"
         : unresolvedControl

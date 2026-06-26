@@ -153,6 +153,62 @@ describe("hcm overlay", () => {
     expect(overlay.providers.home_assistant.bindings["button.camera_snapshot"].decision).toBe("block");
   });
 
+  it("keeps pet feeder actions protected under default run policy", () => {
+    const home = createReviewHome();
+    home.things.push({
+      id: "cat_feeder",
+      name: "猫粮机",
+      type: "pet_feeder",
+      spaceId: "cat_room",
+      capabilities: [
+        {
+          id: "calibrate",
+          name: "宠物喂食器 称重手动校准",
+          kind: "action",
+          valueType: "event",
+          policy: {
+            risk: "medium",
+            confirmation: "always",
+            autoExecutable: false,
+            reason: "投喂类动作需要确认",
+          },
+          binding: {
+            provider: "home_assistant",
+            entityId: "button.cat_feeder_calibrate",
+            domain: "button",
+          },
+        },
+      ],
+    });
+    home.unresolvedBindings.push({
+      id: "cat_feeder:calibrate",
+      thingId: "cat_feeder",
+      thingName: "猫粮机",
+      thingType: "pet_feeder",
+      spaceId: "cat_room",
+      entityId: "button.cat_feeder_calibrate",
+      entityName: "宠物喂食器 称重手动校准",
+      kind: "action",
+      valueType: "event",
+      reason: "投喂类动作需要确认",
+      suggestedRisk: "medium",
+      confirmation: "always",
+      autoExecutable: false,
+    });
+
+    const next = applyHcmOverlay(home, createHcmOverlay());
+    const capability = next.things.find((thing) => thing.id === "cat_feeder").capabilities[0];
+
+    expect(capability.policy).toMatchObject({
+      risk: "high",
+      confirmation: "always",
+      autoExecutable: false,
+      overlayDecision: "default_block",
+      overlaySource: "hard_protection",
+    });
+    expect(next.defaultPolicy).toMatchObject({ allowed: 1, protected: 1 });
+  });
+
   it("does not let stale allow overlays bypass hard protection", () => {
     const home = createReviewHome();
     home.things.push({

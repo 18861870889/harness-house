@@ -167,6 +167,50 @@ describe("hcm planner compiler", () => {
     );
   });
 
+  it("turns device capability questions into read-only capability answers", () => {
+    const home = createHcmHome({
+      provider: { id: "home_assistant", name: "Home Assistant" },
+      spaces: [{ id: "cat_room", name: "猫猫房" }],
+      things: [
+        {
+          id: "cat_feeder",
+          name: "猫粮机",
+          type: "pet_feeder",
+          spaceId: "cat_room",
+          capabilities: [
+            {
+              id: "food_out",
+              name: "宠物喂食器 喂食机出粮",
+              kind: "sensor",
+              valueType: "unknown",
+              state: "unknown",
+              policy: { risk: "low", confirmation: "never", autoExecutable: false },
+              binding: { provider: "home_assistant", domain: "notify", entityId: "notify.food_out" },
+            },
+          ],
+        },
+      ],
+    });
+
+    const plan = normalizeHcmPlannerDraft("猫粮机如何控制", {
+      intent_type: "inventory_query",
+      intent: "查询猫粮机控制方式",
+      confidence: 0.9,
+      actions: [],
+    }, home);
+
+    expect(plan).toMatchObject({
+      kind: "hcm_capability_query",
+      intentType: "inventory_query",
+      actions: [],
+      stateQuery: {
+        path: "hcm-capability-query",
+        thingId: "cat_feeder",
+      },
+    });
+    expect(plan.summary).toContain("当前不能直接执行：喂食机出粮");
+  });
+
   it("narrows a referential follow-up prompt to the focused logical target", () => {
     const devices = compileHcmForPlanner(createPlannerHome(), {
       input: "关一下",

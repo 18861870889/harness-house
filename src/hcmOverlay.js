@@ -40,6 +40,7 @@ const DEFAULT_DECISION_POLICIES = {
     reason: "默认保护高风险/配置能力",
   },
 };
+const MEDIUM_DEVICE_TYPES_REQUIRING_CONFIRMATION = new Set(["pet_feeder", "robot_vacuum", "washer", "dryer"]);
 
 export function createHcmOverlay({ updatedAt = new Date().toISOString(), providers = {} } = {}) {
   return {
@@ -389,6 +390,7 @@ function isExecutableCapability(capability) {
 function requiresHardProtection(binding) {
   const text = `${binding.thingName ?? ""} ${binding.entityName ?? ""} ${binding.reason ?? ""} ${binding.thingType ?? ""}`
     .toLowerCase();
+  if (MEDIUM_DEVICE_TYPES_REQUIRING_CONFIRMATION.has(binding.thingType)) return true;
   if (binding.suggestedRisk === POLICY_LEVELS.SENSITIVE) return true;
   if (binding.kind === CAPABILITY_KINDS.SENSOR) return true;
   if (binding.kind === CAPABILITY_KINDS.CONFIG) return true;
@@ -400,6 +402,7 @@ function requiresCapabilityHardProtection(capability, binding) {
   const domain = capability.binding?.domain;
   const text = `${binding?.thingName ?? ""} ${binding?.entityName ?? ""} ${binding?.reason ?? ""} ${binding?.thingType ?? ""} ${capability.name ?? ""}`
     .toLowerCase();
+  if (MEDIUM_DEVICE_TYPES_REQUIRING_CONFIRMATION.has(binding?.thingType)) return true;
   if (capability.kind === CAPABILITY_KINDS.CONFIG) return true;
   if (["number", "select", "text"].includes(domain)) return true;
   if (capability.valueType === "text") return true;

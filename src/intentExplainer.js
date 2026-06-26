@@ -59,7 +59,9 @@ export function explainIntentResult({ input, plan, execution, plannerHints = [] 
 function userMessage({ input, plan, execution, targetNames }) {
   if (plan?.kind === "hcm_preference_feedback") return plan.summary;
   if (plan?.kind === "hcm_correction_feedback") return plan.summary;
-  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_state_query") return conciseStateMessage(plan) || plan?.stateQuery?.summary || plan.summary;
+  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_capability_query" || plan?.kind === "hcm_state_query") {
+    return conciseStateMessage(plan) || plan?.stateQuery?.summary || plan.summary;
+  }
   if (execution?.status === "executed") {
     const action = execution.accepted?.[0];
     if (execution.accepted?.length === 1 && action?.thingName) {
@@ -131,7 +133,7 @@ function targetNamesFromPlan(plan) {
 
 function safetyText(plan, execution) {
   if (plan?.kind === "hcm_state_query") return "只读状态查询，不执行设备动作。";
-  if (plan?.kind === "hcm_inventory_query") return "只读家庭知识查询，不执行设备动作。";
+  if (plan?.kind === "hcm_inventory_query" || plan?.kind === "hcm_capability_query") return "只读家庭知识查询，不执行设备动作。";
   if (plan?.kind === "hcm_correction_feedback") return "纠错反馈只记录，不执行设备动作，也不自动修改映射。";
   if (execution?.status === "needs_clarification") return "目标或控制通道不完整，未执行任何设备动作。";
   if (execution?.status === "needs_confirmation" && execution.decisionReview?.recovery?.mode === "ask_partial_execution_confirmation") {
