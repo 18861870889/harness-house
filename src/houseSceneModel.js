@@ -122,6 +122,7 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
   const controllable = thing.state?.controllable ?? 0;
   const readable = thing.state?.readable ?? 0;
   const sensorState = describeSensorThing(thing);
+  const applianceState = describeApplianceThing(thing);
   return {
     id: thing.id,
     name: thing.name,
@@ -140,10 +141,15 @@ function mapThingToSceneDevice(thing, roomId, x, z) {
     ...(thing.logicalAsset && typeof thing.state?.commandedState === "boolean" ? { on: thing.state.commandedState } : {}),
     ...(sensorState?.detected !== undefined ? { detected: sensorState.detected } : {}),
     ...(sensorState?.open !== undefined ? { open: sensorState.open } : {}),
+    ...(applianceState?.on !== undefined ? { on: applianceState.on } : {}),
+    ...(applianceState?.status !== undefined ? { status: applianceState.status } : {}),
+    ...(applianceState?.battery !== undefined ? { battery: applianceState.battery } : {}),
     statusLabel: thing.logicalAsset
       ? logicalAssetStatusLabel(thing)
       : sensorState?.label
         ? sensorState.label
+        : applianceState?.label
+          ? applianceState.label
         : autoExecutable > 0
         ? controlStatusLabel({ autoExecutable, controllable })
         : readable > 0
@@ -165,6 +171,48 @@ function describeSensorThing(thing) {
   if (thing.type === "motion_sensor") return describeMotionSensor(thing);
   if (thing.type === "door_sensor") return describeDoorSensor(thing);
   return null;
+}
+
+function describeApplianceThing(thing) {
+  if (thing.type === "robot_vacuum") return describeRobotVacuum(thing);
+  if (thing.type === "gas_heater" || thing.type === "water_heater") return describeBooleanAppliance(thing, {
+    onLabel: "开启",
+    offLabel: "关闭",
+  });
+  if (thing.type === "washer" || thing.type === "dryer") return describeRunningAppliance(thing);
+  return null;
+}
+
+function describeRobotVacuum(thing) {
+  const vacuum = findCapabilityByDomainOrName(thing, "vacuum", /扫地|机器人|vacuum|清扫|回充|充电座/);
+  const battery = findCapability(thing, /电池|电量|battery/);
+  const rawStatus = normalizeTextState(vacuum?.binding?.currentState ?? vacuum?.state);
+  const status = normalizeRobotStatus(rawStatus);
+  const label = robotStatusLabel(status);
+  const batteryValue = numericState(battery);
+  return {
+    status,
+    battery: batteryValue,
+    label: joinStatusParts([label, batteryValue !== undefined ? `${batteryValue}%` : ""]),
+  };
+}
+
+function describeBooleanAppliance(thing, labels) {
+  const control = findCapabilityByDomainOrName(thing, "switch", /电源|开关|power|heater|热水|燃气/);
+  const state = capabilityBooleanState(control);
+  if (state === true) return { on: true, status: "on", label: labels.onLabel };
+  if (state === false) return { on: false, status: "off", label: labels.offLabel };
+  return { status: "unknown", label: thing.online === false ? "离线" : "状态未知" };
+}
+
+function describeRunningAppliance(thing) {
+  const capability = findCapabilityByDomainOrName(thing, "switch", /运行|工作|状态|power|开关/);
+  const state = capabilityBooleanState(capability);
+  if (state === true) return { status: "running", label: "运行中" };
+  if (state === false) return { status: "idle", label: "待机" };
+  const text = normalizeTextState(capability?.binding?.currentState ?? capability?.state);
+  if (text && !isUnknownState(text)) return { status: text, label: text };
+  return { status: "unknown", label: thing.online === false ? "离线" : "状态未知" };
 }
 
 function describePresenceSensor(thing) {
@@ -217,6 +265,14 @@ function findCapability(thing, pattern) {
   });
 }
 
+function findCapabilityByDomainOrName(thing, domain, pattern) {
+  return (thing.capabilities ?? []).find((capability) => {
+    const bindingDomain = capability.binding?.domain;
+    const text = `${capability.id ?? ""} ${capability.name ?? ""} ${capability.binding?.entityId ?? ""}`.toLowerCase();
+    return bindingDomain === domain || pattern.test(text);
+  });
+}
+
 function capabilityBooleanState(capability) {
   if (!capability) return null;
   const state = capability.state;
@@ -230,6 +286,39 @@ function capabilityBooleanState(capability) {
 function readableState(capability) {
   if (!capability || isUnknownState(capability.state)) return "";
   return String(capability.state);
+}
+
+function normalizeTextState(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim().toLowerCase();
+}
+
+function numericState(capability) {
+  if (!capability || isUnknownState(capability.state)) return undefined;
+  const value = Number(capability.state);
+  return Number.isFinite(value) ? Math.round(value) : undefined;
+}
+
+function normalizeRobotStatus(status) {
+  if (!status || isUnknownState(status)) return "unknown";
+  if (["cleaning", "on"].includes(status)) return "cleaning";
+  if (["returning", "returning_to_base"].includes(status)) return "returning";
+  if (["docked", "charging"].includes(status)) return "docked";
+  if (["idle", "off"].includes(status)) return "idle";
+  if (["paused"].includes(status)) return "paused";
+  if (["error"].includes(status)) return "error";
+  return status;
+}
+
+function robotStatusLabel(status) {
+  if (status === "cleaning") return "清扫中";
+  if (status === "returning") return "回充中";
+  if (status === "docked") return "在充电座";
+  if (status === "idle") return "待命";
+  if (status === "paused") return "暂停";
+  if (status === "error") return "异常";
+  if (status === "unknown") return "状态未知";
+  return status;
 }
 
 function isUnknownState(state) {

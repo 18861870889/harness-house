@@ -1109,7 +1109,7 @@ export default function App() {
           onboardingActionId={onboardingActionId}
           defaultRunSummary={defaultRunSummary}
         />
-        <SystemMetrics devices={devices} />
+        <SystemMetrics sceneModel={houseSceneModel} fallbackDevices={devices} />
       </aside>
 
       <aside className="right-rail control-rail ai-rail" aria-label="AI 对话与执行">
@@ -1374,11 +1374,20 @@ function Fact({ icon: Icon, label, value }) {
   );
 }
 
-function SystemMetrics({ devices }) {
-  const summary = useMemo(() => summarizeHome(devices), [devices]);
-  const highRisk = devices.gas_heater.on ? "开启" : "关闭";
-  const feeder = devices.cat_feeder;
-  const robot = devices.robot.status === "cleaning" ? "清扫" : "待命";
+function SystemMetrics({ sceneModel, fallbackDevices }) {
+  const devices = useMemo(() => {
+    if (sceneModel?.devices?.length > 0) return sceneModel.devices;
+    return Object.values(fallbackDevices ?? {});
+  }, [fallbackDevices, sceneModel?.devices]);
+  const rooms = sceneModel?.rooms ?? [];
+  const summary = useMemo(
+    () => (sceneModel?.source === "hcm" ? summarizeSceneHome(devices, rooms) : summarizeHome(fallbackDevices)),
+    [devices, fallbackDevices, rooms, sceneModel?.source],
+  );
+  const gasHeater = findSceneDevice(devices, ["gas_heater", "water_heater"], /燃气|热水器/);
+  const feeder = findSceneDevice(devices, ["pet_feeder"], /猫粮|投喂|feeder/);
+  const robot = findSceneDevice(devices, ["robot_vacuum"], /扫地|机器人|vacuum/);
+  const frontDoor = findSceneDevice(devices, ["door_sensor"]);
 
   return (
     <section className="panel compact-panel">
@@ -1388,13 +1397,52 @@ function SystemMetrics({ devices }) {
       </div>
       <p className="state-summary">{summary}</p>
       <div className="metric-grid">
-        <Metric label="燃气热水器" value={highRisk} tone={devices.gas_heater.on ? "danger" : "muted"} />
-        <Metric label="猫粮机" value={`${feeder.portionsToday} 份`} />
-        <Metric label="扫地机器人" value={robot} />
-        <Metric label="前门" value={devices.front_door.open ? "开启" : "关闭"} />
+        <Metric label="燃气热水器" value={sceneDeviceStateLabel(gasHeater)} tone={gasHeater?.on ? "danger" : "muted"} />
+        <Metric label="猫粮机" value={sceneDeviceStateLabel(feeder)} />
+        <Metric label="扫地机器人" value={sceneDeviceStateLabel(robot)} tone={robot?.status === "error" ? "danger" : "normal"} />
+        <Metric label="前门" value={sceneDeviceStateLabel(frontDoor)} />
       </div>
     </section>
   );
+}
+
+function summarizeSceneHome(devices = [], rooms = []) {
+  const activeLights = devices.filter((device) => device.type === "light" && isActiveHomeDevice(device)).length;
+  const activeAc = devices.filter((device) => device.type === "ac" && isActiveHomeDevice(device)).length;
+  const activeFans = devices.filter((device) => device.type === "fan" && isActiveHomeDevice(device)).length;
+  const occupiedRooms = rooms.filter((room) => room.presence).map((room) => room.name);
+  const frontDoor = findSceneDevice(devices, ["door_sensor"], /入户|大门|门窗|front.*door/);
+  return [
+    `当前 ${activeLights} 盏灯开启`,
+    `${activeAc} 台空调开启`,
+    `${activeFans} 台风扇开启`,
+    `人在区域：${occupiedRooms.length ? occupiedRooms.join("、") : "未知"}`,
+    `入户门${frontDoor ? sceneDeviceStateLabel(frontDoor) : "未接入"}`,
+  ].join("；") + "。";
+}
+
+function findSceneDevice(devices = [], types = [], namePattern = null) {
+  const typeSet = new Set(types);
+  const typeMatch = devices.find((device) => typeSet.has(device.type));
+  if (typeMatch) return typeMatch;
+  if (!namePattern) return null;
+  return devices.find((device) => {
+    const name = `${device.name ?? ""} ${device.id ?? ""}`.toLowerCase();
+    return namePattern.test(name);
+  });
+}
+
+function sceneDeviceStateLabel(device) {
+  if (!device) return "未接入";
+  if (device.online === false) return "离线";
+  if (device.type === "pet_feeder" && device.portionsToday !== undefined) return `${device.portionsToday} 份`;
+  if (device.type === "pet_feeder" && isCapabilityCountLabel(device.statusLabel)) return "已接入";
+  if (device.statusLabel) return device.statusLabel;
+  return deviceStateLabel(device);
+}
+
+function isCapabilityCountLabel(label) {
+  return /^(可自动|自动|需确认|只读|protected)/.test(String(label ?? ""));
 }
 
 function Metric({ label, value, tone = "normal" }) {

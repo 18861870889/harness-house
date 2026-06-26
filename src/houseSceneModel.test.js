@@ -155,6 +155,56 @@ describe("house scene model", () => {
     );
   });
 
+  it("projects HCM robot vacuum state instead of falling back to simulator defaults", () => {
+    const home = createHcmHome({
+      provider: { id: "home_assistant", name: "Home Assistant" },
+      spaces: [{ id: "living", name: "客厅" }],
+      things: [
+        {
+          id: "living_robot",
+          name: "扫地机器人",
+          type: "robot_vacuum",
+          spaceId: "living",
+          online: true,
+          capabilities: [
+            {
+              id: "vacuum_state",
+              name: "扫地机器人",
+              kind: "control",
+              valueType: "unknown",
+              state: "cleaning",
+              binding: { domain: "vacuum", entityId: "vacuum.living_robot", currentState: "cleaning" },
+              policy: { risk: "medium", confirmation: "always", autoExecutable: false },
+            },
+            {
+              id: "battery",
+              name: "电池电量",
+              kind: "sensor",
+              valueType: "number",
+              state: 42,
+              unit: "%",
+              binding: { domain: "sensor", entityId: "sensor.living_robot_battery", currentState: "42" },
+              policy: { risk: "low", confirmation: "never", autoExecutable: false },
+            },
+          ],
+          state: { autoExecutable: 0, controllable: 1, readable: 1 },
+        },
+      ],
+    });
+
+    const model = createHouseSceneModel({ hcmHome: home });
+
+    expect(model.devices).toContainEqual(
+      expect.objectContaining({
+        id: "living_robot",
+        type: "robot_vacuum",
+        status: "cleaning",
+        battery: 42,
+        statusLabel: "清扫中 · 42%",
+      }),
+    );
+  });
+
   it("shows logical lights in their semantic room instead of the physical switch panel", () => {
     const home = attachHcmControlGraph(createHcmHome({
       provider: { id: "home_assistant", name: "Home Assistant" },
